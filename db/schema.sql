@@ -34,3 +34,17 @@ CREATE TABLE IF NOT EXISTS team_pokemon (
 );
 
 CREATE INDEX IF NOT EXISTS team_pokemon_species_idx ON team_pokemon(species_id);
+
+CREATE TABLE IF NOT EXISTS matches (
+    id            SERIAL PRIMARY KEY,
+    tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    phase         INTEGER NOT NULL,
+    round         INTEGER NOT NULL,
+    player1       TEXT NOT NULL,
+    player2       TEXT NOT NULL,
+    winner        TEXT, -- NULL means a tie; otherwise always equals player1 or player2
+    UNIQUE (tournament_id, phase, round, player1, player2)
+);
+
+CREATE INDEX IF NOT EXISTS matches_player1_idx ON matches(player1);
+CREATE INDEX IF NOT EXISTS matches_player2_idx ON matches(player2);

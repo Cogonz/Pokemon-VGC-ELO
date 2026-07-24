@@ -42,11 +42,9 @@ model tournaments {
   format    String?
   date      DateTime?   @db.Timestamptz(6)
   players   Int?
+  matches   matches[]
   standings standings[]
 }
-
-// Auth.js (next-auth v5) Prisma adapter schema.
-// https://authjs.dev/getting-started/adapters/prisma
 
 model Account {
   id                String  @id @default(cuid())
@@ -54,15 +52,14 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -91,4 +88,19 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model matches {
+  id            Int         @id @default(autoincrement())
+  tournament_id String
+  phase         Int
+  round         Int
+  player1       String
+  player2       String
+  winner        String?
+  tournaments   tournaments @relation(fields: [tournament_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([tournament_id, phase, round, player1, player2])
+  @@index([player1])
+  @@index([player2])
 }

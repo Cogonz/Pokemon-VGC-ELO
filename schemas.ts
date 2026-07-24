@@ -27,6 +27,18 @@ const LimitlessStanding = z.object({
 export const StandingsResponse = z.array(LimitlessStanding);
 export type StandingsResponse = z.infer<typeof StandingsResponse>
 
+const LimitlessPairing = z.object({
+    phase: z.number(),
+    round: z.number(),
+    player1: z.string().nullish(),
+    player2: z.string().nullish(),
+    // Player id of the winner; 0 = tie; -1 = double loss / no-show.
+    winner: z.union([z.string(), z.number()]).nullish()
+});
+
+export const PairingsResponse = z.array(LimitlessPairing);
+export type PairingsResponse = z.infer<typeof PairingsResponse>
+
 
 // Schemas for Intaking Uesr Team Data
 

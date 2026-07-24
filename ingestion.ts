@@ -1,4 +1,4 @@
-import { StandingsResponse } from './schemas.js';
+import { StandingsResponse, PairingsResponse } from './schemas.js';
 import { getLimitlessApiKey } from './secrets.js';
 import { pool } from './db.js';
 
@@ -7,6 +7,7 @@ import { pool } from './db.js';
 
 const BASE = 'https://play.limitlesstcg.com/api';
 const MIN_PLAYERS = 30; // only tournaments with real attendance are useful for Elo
+const INGEST_COUNT = 8; // player Elo needs several tournaments of match history, not just one
 
 interface TournamentSummary {
     id: string;
@@ -43,6 +44,11 @@ export async function pickRecentTournament(): Promise<TournamentSummary | undefi
 export async function fetchStandings(tournamentId: string): Promise<StandingsResponse> {
     const raw = await limitlessGet<unknown>(`/tournaments/${tournamentId}/standings`);
     return StandingsResponse.parse(raw);
+}
+
+export async function fetchPairings(tournamentId: string): Promise<PairingsResponse> {
+    const raw = await limitlessGet<unknown>(`/tournaments/${tournamentId}/pairings`);
+    return PairingsResponse.parse(raw);
 }
 
 export async function persistTournament(tournament: TournamentSummary, standings: StandingsResponse): Promise<void> {
@@ -87,21 +93,65 @@ export async function persistTournament(tournament: TournamentSummary, standings
     }
 }
 
+export async function persistMatches(tournamentId: string, pairings: PairingsResponse): Promise<number> {
+    const client = await pool.connect();
+    let stored = 0;
+    try {
+        await client.query('BEGIN');
+
+        for (const m of pairings) {
+            if (!m.player1 || !m.player2) continue; // bye / no-show
+            if (m.winner === -1) continue; // double loss -- not a usable result
+            const winner = m.winner === 0 ? null : String(m.winner); // null = tie
+
+            await client.query(
+                `INSERT INTO matches (tournament_id, phase, round, player1, player2, winner)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (tournament_id, phase, round, player1, player2) DO UPDATE SET winner = $6`,
+                [tournamentId, m.phase, m.round, m.player1, m.player2, winner]
+            );
+            stored++;
+        }
+
+        await client.query('COMMIT');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+    return stored;
+}
+
+async function ingestTournament(tournament: TournamentSummary): Promise<void> {
+    const standings = await fetchStandings(tournament.id);
+    await persistTournament(tournament, standings);
+
+    const pairings = await fetchPairings(tournament.id);
+    const stored = await persistMatches(tournament.id, pairings);
+
+    const withTeam = standings.filter((s) => s.decklist && s.decklist.length > 0);
+    console.log(
+        `  ${tournament.name}: ${standings.length} standings (${withTeam.length} with teams), ${stored} matches`
+    );
+}
+
 async function main() {
-    const tournament = await pickRecentTournament();
-    if (!tournament) {
+    const tournaments = await fetchTournaments();
+    const eligible = tournaments.filter((t) => (t.players ?? 0) >= MIN_PLAYERS);
+    const toIngest = (eligible.length > 0 ? eligible : tournaments).slice(0, INGEST_COUNT);
+
+    if (toIngest.length === 0) {
         console.log('No tournaments returned -- check the endpoint/network.');
         return;
     }
-    console.log(`Using tournament: ${tournament.name} (id=${tournament.id}, players=${tournament.players})`);
 
-    const standings = await fetchStandings(tournament.id);
-    const withTeam = standings.filter((s) => s.decklist && s.decklist.length > 0);
-    console.log(`Players returned: ${standings.length}`);
-    console.log(`Players with a team list: ${withTeam.length}`);
+    console.log(`Ingesting ${toIngest.length} tournament(s)...`);
+    for (const tournament of toIngest) {
+        await ingestTournament(tournament);
+    }
 
-    await persistTournament(tournament, standings);
-    console.log(`Persisted tournament ${tournament.id} to Postgres.`);
+    console.log(`Done. Persisted ${toIngest.length} tournament(s) to Postgres.`);
     await pool.end();
 }
 
