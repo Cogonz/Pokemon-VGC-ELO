@@ -62,8 +62,10 @@ export default async function Home() {
                         <h2 className="text-lg font-semibold text-gray-800">Pokemon Elo leaderboard</h2>
                         <p className="mt-1 text-sm text-gray-500">
                             Team-level Elo attributed per Pokemon; a Pokemon on both rosters in a match nets exactly
-                            zero rating change from it, but still counts toward its matches/record (min{' '}
-                            {MIN_POKEMON_ELO_MATCHES} matches shown).
+                            zero rating change from it, but still counts toward its matches/record. Ratings are
+                            shrunk toward 1500 in proportion to how few matches back them, so a thin sample can&apos;t
+                            hold an extreme rating a larger one wouldn&apos;t support (min {MIN_POKEMON_ELO_MATCHES}{' '}
+                            matches shown).
                         </p>
                         <table className="mt-3 w-full text-sm">
                             <thead>

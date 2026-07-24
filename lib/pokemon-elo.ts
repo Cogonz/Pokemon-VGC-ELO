@@ -31,6 +31,8 @@ interface PokemonRecord {
     matches: number;
 }
 
+const CONFIDENCE_GAMES = 150; // pseudo-count: a rating needs this many matches before it's trusted at full strength
+
 // Team-level Elo attributed down to individual Pokemon.
 //
 // The Limitless API only exposes each player's full registered decklist per
@@ -43,12 +45,22 @@ interface PokemonRecord {
 // delta from it. But it still reflects real team strength (a shared staple
 // makes both sides genuinely stronger), so it's kept in the full-roster
 // average used to compute the pre-match expectation -- only the resulting
-// delta is restricted to the differentiating (non-shared) Pokemon. Earlier
-// this excluded shared Pokemon from the match entirely, which also dropped
-// them from the match/win-loss count -- that systematically starved the
-// most-used Pokemon (they're mirrored constantly) of both rating signal and
-// even a recorded appearance, to the point the highest-usage species in the
-// format were missing from the leaderboard outright.
+// delta is restricted to the differentiating (non-shared) Pokemon. Every
+// Pokemon on either roster -- shared or not -- still counts toward its own
+// matches/win-loss record, so heavily-mirrored staples don't disappear from
+// the leaderboard just because they rarely swing an individual game.
+//
+// Ratings are shrunk toward 1500 in proportion to how few matches back them
+// (Bayesian-style: base + (raw - base) * matches/(matches + C)), so a
+// Pokemon with a handful of games can't camp at an extreme rating a much
+// larger sample wouldn't support -- this barely affects heavily-tested
+// Pokemon. (A leave-one-out variant -- excluding a Pokemon's own rating from
+// its team's average when computing its expected score -- was tried to
+// correct a smaller self-referential dilution effect, but it broke the
+// zero-sum property that keeps this stable: individual per-species expected
+// scores no longer cancel out match to match, and small directional biases
+// compounded across ~30k interlocking matches into runaway drift (Garchomp
+// spiraled to -100,000+). Reverted; not worth the instability.)
 export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo[]> {
     const matches = await prisma.$queryRaw<MatchRow[]>`
         SELECT m.tournament_id, m.player1, m.player2, m.winner
@@ -88,9 +100,6 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
         return r;
     };
 
-    const avg = (species: string[]) =>
-        species.reduce((sum, s) => sum + (rating.get(s) ?? base), 0) / species.length;
-
     for (const m of matches) {
         const rosterA = rosters.get(rosterKey(m.tournament_id, m.player1));
         const rosterB = rosters.get(rosterKey(m.tournament_id, m.player2));
@@ -126,8 +135,8 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
         // Full-roster averages (including shared Pokemon) drive the pre-match
         // expectation -- a shared staple still reflects real team strength,
         // it just can't explain why one side won *this* game.
-        const ratingA = avg(teamA);
-        const ratingB = avg(teamB);
+        const ratingA = teamA.reduce((sum, s) => sum + (rating.get(s) ?? base), 0) / teamA.length;
+        const ratingB = teamB.reduce((sum, s) => sum + (rating.get(s) ?? base), 0) / teamB.length;
         const eA = 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
 
         const deltaA = k * (sA - eA);
@@ -145,14 +154,19 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
     }
 
     return [...record.entries()]
-        .map(([speciesId, rec]) => ({
-            speciesId,
-            name: nameBySpecies.get(speciesId) ?? speciesId,
-            rating: Math.round(rating.get(speciesId) ?? base),
-            wins: rec.wins,
-            losses: rec.losses,
-            ties: rec.ties,
-            matches: rec.matches,
-        }))
+        .map(([speciesId, rec]) => {
+            const raw = rating.get(speciesId) ?? base;
+            const shrink = rec.matches / (rec.matches + CONFIDENCE_GAMES);
+            const adjusted = base + (raw - base) * shrink;
+            return {
+                speciesId,
+                name: nameBySpecies.get(speciesId) ?? speciesId,
+                rating: Math.round(adjusted),
+                wins: rec.wins,
+                losses: rec.losses,
+                ties: rec.ties,
+                matches: rec.matches,
+            };
+        })
         .sort((a, b) => b.rating - a.rating);
 }
