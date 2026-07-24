@@ -7,7 +7,7 @@ import { pool } from './db.js';
 
 const BASE = 'https://play.limitlesstcg.com/api';
 const MIN_PLAYERS = 30; // only tournaments with real attendance are useful for Elo
-const INGEST_COUNT = 8; // player Elo needs several tournaments of match history, not just one
+const INGEST_COUNT = 100; // Pokemon Elo needs a lot of match history for signal to accumulate per species
 
 interface TournamentSummary {
     id: string;
@@ -17,6 +17,10 @@ interface TournamentSummary {
     players?: number;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const REQUEST_DELAY_MS = 400;
+const MAX_RETRIES = 5;
+
 async function limitlessGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
     const url = new URL(`${BASE}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
@@ -25,15 +29,25 @@ async function limitlessGet<T>(path: string, params: Record<string, string | num
     const headers: Record<string, string> = { 'User-Agent': 'vgc-elo/0.1' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-        throw new Error(`Limitless API ${path} failed: ${res.status} ${res.statusText}`);
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        await sleep(REQUEST_DELAY_MS);
+        const res = await fetch(url, { headers });
+        if (res.status === 429) {
+            const retryAfter = Number(res.headers.get('retry-after'));
+            const backoff = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2 ** attempt * 1000;
+            await sleep(backoff);
+            continue;
+        }
+        if (!res.ok) {
+            throw new Error(`Limitless API ${path} failed: ${res.status} ${res.statusText}`);
+        }
+        return res.json() as Promise<T>;
     }
-    return res.json() as Promise<T>;
+    throw new Error(`Limitless API ${path} failed: rate limited after ${MAX_RETRIES} retries`);
 }
 
 export async function fetchTournaments(): Promise<TournamentSummary[]> {
-    return limitlessGet<TournamentSummary[]>('/tournaments', { game: 'VGC', limit: 50 });
+    return limitlessGet<TournamentSummary[]>('/tournaments', { game: 'VGC', limit: 200 });
 }
 
 export async function pickRecentTournament(): Promise<TournamentSummary | undefined> {
@@ -147,11 +161,17 @@ async function main() {
     }
 
     console.log(`Ingesting ${toIngest.length} tournament(s)...`);
+    let failed = 0;
     for (const tournament of toIngest) {
-        await ingestTournament(tournament);
+        try {
+            await ingestTournament(tournament);
+        } catch (err) {
+            failed++;
+            console.error(`  ${tournament.name}: failed -- ${(err as Error).message}`);
+        }
     }
 
-    console.log(`Done. Persisted ${toIngest.length} tournament(s) to Postgres.`);
+    console.log(`Done. Persisted ${toIngest.length - failed}/${toIngest.length} tournament(s) to Postgres.`);
     await pool.end();
 }
 
