@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+.next/
+infra/cdk.out/
+infra/dist/
+*.tsbuildinfo

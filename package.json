@@ -1,0 +1,36 @@
+{
+  "name": "pokemon-vgc-elo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "ingest": "tsx ingestion.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@auth/prisma-adapter": "^2.11.3",
+    "@aws-sdk/client-secrets-manager": "^3.600.0",
+    "@prisma/adapter-pg": "^7.9.0",
+    "@prisma/client": "^7.9.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "dotenv": "^17.4.2",
+    "next": "^16.2.11",
+    "next-auth": "^5.0.0-beta.32",
+    "pg": "^8.22.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.0",
+    "tailwindcss": "^4.3.3",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/pg": "^8.20.0",
+    "prisma": "^7.9.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  }
+}

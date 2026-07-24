@@ -1,0 +1,20 @@
+{
+  "name": "vgc-elo-infra",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.170.0",
+    "constructs": "^10.4.2"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.1010.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0"
+  }
+}

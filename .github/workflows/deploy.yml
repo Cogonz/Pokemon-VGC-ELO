@@ -1,0 +1,40 @@
+name: Deploy
+
+# Manual only -- this pushes a real image to ECR and runs `cdk deploy` against
+# a real AWS account. Requires repo secrets: AWS_ROLE_ARN, AWS_REGION.
+# Nothing in this repo triggers it automatically.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - name: Build and push image
+        working-directory: Pokemon VGC ELO
+        run: |
+          docker build -t "${{ steps.ecr.outputs.registry }}/vgc-elo:${{ github.sha }}" .
+          docker push "${{ steps.ecr.outputs.registry }}/vgc-elo:${{ github.sha }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: cdk deploy
+        working-directory: Pokemon VGC ELO/infra
+        run: |
+          npm ci
+          npx cdk deploy --require-approval never

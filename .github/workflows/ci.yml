@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Pokemon VGC ELO
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: Pokemon VGC ELO/package-lock.json
+
+      - run: npm ci
+
+      - name: Prisma client (schema-only, no live DB needed)
+        run: |
+          echo "DATABASE_URL=postgresql://placeholder:5432/placeholder" > .env
+          npx prisma generate
+
+      - run: npm run typecheck
+      - run: npm run build

@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vgc
+      POSTGRES_PASSWORD: vgc
+      POSTGRES_DB: vgc_elo
+    ports:
+      - '5433:5432' # 5433 to avoid clashing with a native Postgres on 5432
+    volumes:
+      - vgc_elo_db_data:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+
+  app:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://vgc:vgc@db:5432/vgc_elo
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID}
+      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET}
+    ports:
+      - '3000:3000'
+    depends_on:
+      - db
+
+volumes:
+  vgc_elo_db_data:

@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model standings {
+  id            Int            @id @default(autoincrement())
+  tournament_id String
+  player        String
+  name          String
+  placement     Int?
+  wins          Int
+  losses        Int
+  ties          Int
+  tournaments   tournaments    @relation(fields: [tournament_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  team_pokemon  team_pokemon[]
+
+  @@unique([tournament_id, player])
+}
+
+model team_pokemon {
+  id          Int       @id @default(autoincrement())
+  standing_id Int
+  species_id  String
+  name        String
+  item        String?
+  ability     String?
+  nature      String?
+  tera        String?
+  moves       String[]  @default([])
+  standings   standings @relation(fields: [standing_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([species_id], map: "team_pokemon_species_idx")
+}
+
+model tournaments {
+  id        String      @id
+  name      String
+  format    String?
+  date      DateTime?   @db.Timestamptz(6)
+  players   Int?
+  standings standings[]
+}
+
+// Auth.js (next-auth v5) Prisma adapter schema.
+// https://authjs.dev/getting-started/adapters/prisma
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
