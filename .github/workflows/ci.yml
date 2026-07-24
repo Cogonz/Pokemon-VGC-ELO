@@ -8,9 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: Pokemon VGC ELO
     steps:
       - uses: actions/checkout@v4
 
@@ -18,7 +15,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: Pokemon VGC ELO/package-lock.json
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
 

@@ -24,7 +24,6 @@ jobs:
         id: ecr
 
       - name: Build and push image
-        working-directory: Pokemon VGC ELO
         run: |
           docker build -t "${{ steps.ecr.outputs.registry }}/vgc-elo:${{ github.sha }}" .
           docker push "${{ steps.ecr.outputs.registry }}/vgc-elo:${{ github.sha }}"
@@ -34,7 +33,7 @@ jobs:
           node-version: 22
 
       - name: cdk deploy
-        working-directory: Pokemon VGC ELO/infra
+        working-directory: infra
         run: |
           npm ci
           npx cdk deploy --require-approval never
