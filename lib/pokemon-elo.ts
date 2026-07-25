@@ -44,7 +44,9 @@ const ELO_SCALE = 400 / Math.LN10; // converts natural-log-odds coefficients to 
 // appearances and near-full retention once a species has thousands.
 const L2_LAMBDA = 40;
 const LEARNING_RATE = 0.1;
-const EPOCHS = 400;
+const MIN_EPOCHS = 20; // floor below which Adam's bias-correction warmup can look falsely converged
+const MAX_EPOCHS = 400; // safety cap; convergence in practice happens well before this
+const CONVERGENCE_THRESHOLD = 1e-4; // stop once every parameter's step this epoch is smaller than this
 
 function sigmoid(z: number): number {
     if (z >= 0) {
@@ -166,10 +168,15 @@ export async function computePokemonElo(base = 1500): Promise<PokemonElo[]> {
     const eps = 1e-8;
     const N = examples.length;
 
-    let loss = Infinity;
-    for (let epoch = 1; epoch <= EPOCHS; epoch++) {
+    // Loss (with its Math.log calls) is only needed for the diagnostic
+    // summary below, not for the gradient itself -- so it's computed once at
+    // the end, not every epoch. Early-stops on max parameter movement
+    // instead (already computed as part of the Adam step, no extra cost),
+    // rather than running a fixed epoch count -- convergence in practice
+    // happens well before MAX_EPOCHS on this dataset.
+    let epochsRun = 0;
+    for (let epoch = 1; epoch <= MAX_EPOCHS; epoch++) {
         const grad = new Float64Array(n);
-        let epochLoss = 0;
 
         for (const ex of examples) {
             let z = 0;
@@ -180,29 +187,44 @@ export async function computePokemonElo(base = 1500): Promise<PokemonElo[]> {
 
             for (const i of ex.uniqueA) grad[i] += err;
             for (const i of ex.uniqueB) grad[i] -= err;
-
-            const pClamped = Math.min(Math.max(p, 1e-12), 1 - 1e-12);
-            epochLoss += -(ex.y * Math.log(pClamped) + (1 - ex.y) * Math.log(1 - pClamped));
         }
 
         for (let i = 0; i < n; i++) grad[i] += L2_LAMBDA * theta[i];
-        for (let i = 0; i < n; i++) epochLoss += (L2_LAMBDA / 2) * theta[i] * theta[i];
 
+        let maxStep = 0;
         for (let i = 0; i < n; i++) {
             m1[i] = beta1 * m1[i] + (1 - beta1) * grad[i];
             v1[i] = beta2 * v1[i] + (1 - beta2) * grad[i] * grad[i];
             const mHat = m1[i] / (1 - beta1 ** epoch);
             const vHat = v1[i] / (1 - beta2 ** epoch);
-            theta[i] -= (LEARNING_RATE * mHat) / (Math.sqrt(vHat) + eps);
+            const step = (LEARNING_RATE * mHat) / (Math.sqrt(vHat) + eps);
+            theta[i] -= step;
+            if (Math.abs(step) > maxStep) maxStep = Math.abs(step);
         }
 
-        if (!Number.isFinite(epochLoss)) {
-            throw new Error(`Pokemon Elo regression diverged at epoch ${epoch} (loss=${epochLoss})`);
+        epochsRun = epoch;
+        if (!Number.isFinite(maxStep)) {
+            throw new Error(`Pokemon Elo regression diverged at epoch ${epoch}`);
         }
-        loss = epochLoss;
+        if (epoch >= MIN_EPOCHS && maxStep < CONVERGENCE_THRESHOLD) break;
     }
 
-    console.log(`[pokemon-elo] trained on ${N} matches, ${n} species, final loss=${loss.toFixed(1)}`);
+    let loss = 0;
+    for (const ex of examples) {
+        let z = 0;
+        for (const i of ex.uniqueA) z += theta[i];
+        for (const i of ex.uniqueB) z -= theta[i];
+        const pClamped = Math.min(Math.max(sigmoid(z), 1e-12), 1 - 1e-12);
+        loss += -(ex.y * Math.log(pClamped) + (1 - ex.y) * Math.log(1 - pClamped));
+    }
+    for (let i = 0; i < n; i++) loss += (L2_LAMBDA / 2) * theta[i] * theta[i];
+    if (!Number.isFinite(loss)) {
+        throw new Error(`Pokemon Elo regression diverged (final loss=${loss})`);
+    }
+
+    console.log(
+        `[pokemon-elo] trained on ${N} matches, ${n} species, ${epochsRun} epochs, final loss=${loss.toFixed(1)}`
+    );
 
     return [...record.entries()]
         .map(([speciesId, rec]) => {
