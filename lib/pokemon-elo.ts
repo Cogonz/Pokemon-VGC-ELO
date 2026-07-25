@@ -31,42 +31,49 @@ interface PokemonRecord {
     matches: number;
 }
 
-const CONFIDENCE_GAMES = 150; // pseudo-count: a rating needs this many matches before it's trusted at full strength
+interface TrainingExample {
+    uniqueA: number[]; // species indices with feature +1 (unique to the winning-side-perspective team A)
+    uniqueB: number[]; // species indices with feature -1
+    y: number; // 1 = A won, 0 = B won, 0.5 = tie
+}
 
-// Team-level Elo attributed down to individual Pokemon.
-//
-// The Limitless API only exposes each player's full registered decklist per
-// tournament, never which specific Pokemon were "brought" to an individual
-// game -- there's no finer-grained data, so every match a player plays uses
-// their whole registered roster as the "general" team.
-//
-// A Pokemon that appears on BOTH rosters in a match is a mirror: it can't
-// explain why one side won *this* match, so it gets an explicit zero rating
-// delta from it. But it still reflects real team strength (a shared staple
-// makes both sides genuinely stronger), so it's kept in the full-roster
-// average used to compute the pre-match expectation -- only the resulting
-// delta is restricted to the differentiating (non-shared) Pokemon. Every
-// Pokemon on either roster -- shared or not -- still counts toward its own
-// matches/win-loss record, so heavily-mirrored staples don't disappear from
-// the leaderboard just because they rarely swing an individual game.
-//
-// Ratings are shrunk toward 1500 in proportion to how few matches back them
-// (Bayesian-style: base + (raw - base) * matches/(matches + C)), so a
-// Pokemon with a handful of games can't camp at an extreme rating a much
-// larger sample wouldn't support -- this barely affects heavily-tested
-// Pokemon. (A leave-one-out variant -- excluding a Pokemon's own rating from
-// its team's average when computing its expected score -- was tried to
-// correct a smaller self-referential dilution effect, but it broke the
-// zero-sum property that keeps this stable: individual per-species expected
-// scores no longer cancel out match to match, and small directional biases
-// compounded across ~30k interlocking matches into runaway drift (Garchomp
-// spiraled to -100,000+). Reverted; not worth the instability.)
-export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo[]> {
+const ELO_SCALE = 400 / Math.LN10; // converts natural-log-odds coefficients to standard 400-point Elo scale
+// Ridge strength, in the same (unnormalized, summed-over-examples) units as the data
+// gradient. Fisher information for a +-1 feature is ~0.25 per differentiating
+// appearance at p=0.5, so lambda=40 gives roughly half signal-retention at ~150
+// appearances and near-full retention once a species has thousands.
+const L2_LAMBDA = 40;
+const LEARNING_RATE = 0.1;
+const EPOCHS = 400;
+
+function sigmoid(z: number): number {
+    if (z >= 0) {
+        const ez = Math.exp(-z);
+        return 1 / (1 + ez);
+    }
+    const ez = Math.exp(z);
+    return ez / (1 + ez);
+}
+
+// Fits one coefficient per Pokemon via L2-regularized logistic regression
+// (the "adjusted plus-minus" method sports analytics uses to credit
+// individuals from team outcomes), instead of sequential per-match Elo
+// updates. Each match is one training row: a Pokemon unique to the winning-
+// perspective team is +1, unique to the other team is -1, and a Pokemon on
+// BOTH rosters (a mirror) is 0 -- it contributes nothing to that row at all,
+// so mirrors cancel out by construction rather than needing to be special-
+// cased. Because every species' coefficient is fit jointly over the whole
+// match history in one convex optimization, there's no live feedback loop
+// between a Pokemon's rating and its teammates' evolving ratings -- which is
+// what made an earlier sequential leave-one-out attempt diverge (see git
+// history). The L2 penalty pulls small-sample coefficients toward 0 (rating
+// 1500), replacing the separate post-hoc shrinkage formula the sequential
+// version needed.
+export async function computePokemonElo(base = 1500): Promise<PokemonElo[]> {
     const matches = await prisma.$queryRaw<MatchRow[]>`
         SELECT m.tournament_id, m.player1, m.player2, m.winner
         FROM matches m
         JOIN tournaments t ON t.id = m.tournament_id
-        ORDER BY t.date ASC NULLS LAST, m.phase ASC, m.round ASC, m.id ASC
     `;
 
     const teamRows = await prisma.$queryRaw<TeamRow[]>`
@@ -89,7 +96,6 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
         nameBySpecies.set(row.species_id, row.name);
     }
 
-    const rating = new Map<string, number>();
     const record = new Map<string, PokemonRecord>();
     const getRecord = (species: string): PokemonRecord => {
         let r = record.get(species);
@@ -99,6 +105,18 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
         }
         return r;
     };
+
+    const speciesIndex = new Map<string, number>();
+    const indexOf = (species: string): number => {
+        let i = speciesIndex.get(species);
+        if (i === undefined) {
+            i = speciesIndex.size;
+            speciesIndex.set(species, i);
+        }
+        return i;
+    };
+
+    const examples: TrainingExample[] = [];
 
     for (const m of matches) {
         const rosterA = rosters.get(rosterKey(m.tournament_id, m.player1));
@@ -132,36 +150,68 @@ export async function computePokemonElo(k = 32, base = 1500): Promise<PokemonElo
 
         if (uniqueA.length === 0 || uniqueB.length === 0) continue; // fully mirrored -- no differentiating signal
 
-        // Full-roster averages (including shared Pokemon) drive the pre-match
-        // expectation -- a shared staple still reflects real team strength,
-        // it just can't explain why one side won *this* game.
-        const ratingA = teamA.reduce((sum, s) => sum + (rating.get(s) ?? base), 0) / teamA.length;
-        const ratingB = teamB.reduce((sum, s) => sum + (rating.get(s) ?? base), 0) / teamB.length;
-        const eA = 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
-
-        const deltaA = k * (sA - eA);
-        const deltaB = -deltaA;
-
-        // Only the differentiating (non-shared) Pokemon absorb the rating
-        // change -- a shared Pokemon nets exactly zero from this match
-        // rather than being excluded from it altogether.
-        for (const species of uniqueA) {
-            rating.set(species, (rating.get(species) ?? base) + deltaA);
-        }
-        for (const species of uniqueB) {
-            rating.set(species, (rating.get(species) ?? base) + deltaB);
-        }
+        examples.push({
+            uniqueA: uniqueA.map(indexOf),
+            uniqueB: uniqueB.map(indexOf),
+            y: sA,
+        });
     }
+
+    const n = speciesIndex.size;
+    const theta = new Float64Array(n);
+    const m1 = new Float64Array(n); // Adam first moment
+    const v1 = new Float64Array(n); // Adam second moment
+    const beta1 = 0.9;
+    const beta2 = 0.999;
+    const eps = 1e-8;
+    const N = examples.length;
+
+    let loss = Infinity;
+    for (let epoch = 1; epoch <= EPOCHS; epoch++) {
+        const grad = new Float64Array(n);
+        let epochLoss = 0;
+
+        for (const ex of examples) {
+            let z = 0;
+            for (const i of ex.uniqueA) z += theta[i];
+            for (const i of ex.uniqueB) z -= theta[i];
+            const p = sigmoid(z);
+            const err = p - ex.y; // summed (unnormalized) cross-entropy gradient contribution
+
+            for (const i of ex.uniqueA) grad[i] += err;
+            for (const i of ex.uniqueB) grad[i] -= err;
+
+            const pClamped = Math.min(Math.max(p, 1e-12), 1 - 1e-12);
+            epochLoss += -(ex.y * Math.log(pClamped) + (1 - ex.y) * Math.log(1 - pClamped));
+        }
+
+        for (let i = 0; i < n; i++) grad[i] += L2_LAMBDA * theta[i];
+        for (let i = 0; i < n; i++) epochLoss += (L2_LAMBDA / 2) * theta[i] * theta[i];
+
+        for (let i = 0; i < n; i++) {
+            m1[i] = beta1 * m1[i] + (1 - beta1) * grad[i];
+            v1[i] = beta2 * v1[i] + (1 - beta2) * grad[i] * grad[i];
+            const mHat = m1[i] / (1 - beta1 ** epoch);
+            const vHat = v1[i] / (1 - beta2 ** epoch);
+            theta[i] -= (LEARNING_RATE * mHat) / (Math.sqrt(vHat) + eps);
+        }
+
+        if (!Number.isFinite(epochLoss)) {
+            throw new Error(`Pokemon Elo regression diverged at epoch ${epoch} (loss=${epochLoss})`);
+        }
+        loss = epochLoss;
+    }
+
+    console.log(`[pokemon-elo] trained on ${N} matches, ${n} species, final loss=${loss.toFixed(1)}`);
 
     return [...record.entries()]
         .map(([speciesId, rec]) => {
-            const raw = rating.get(speciesId) ?? base;
-            const shrink = rec.matches / (rec.matches + CONFIDENCE_GAMES);
-            const adjusted = base + (raw - base) * shrink;
+            const i = speciesIndex.get(speciesId);
+            const coefficient = i === undefined ? 0 : theta[i];
             return {
                 speciesId,
                 name: nameBySpecies.get(speciesId) ?? speciesId,
-                rating: Math.round(adjusted),
+                rating: Math.round(base + coefficient * ELO_SCALE),
                 wins: rec.wins,
                 losses: rec.losses,
                 ties: rec.ties,
