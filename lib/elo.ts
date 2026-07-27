@@ -13,6 +13,7 @@ interface MatchRow {
     player1: string;
     player2: string;
     winner: string | null;
+    phase: number;
 }
 
 interface PlayerRecord {
@@ -21,12 +22,21 @@ interface PlayerRecord {
     ties: number;
 }
 
+// Bracket rounds (phase > 1) are Bo3 in practice; only the match winner is
+// stored, not per-game results, so a Bo3 outcome already required winning
+// 2-of-3 -- inherently less noisy than a single Bo1 Swiss game. The win
+// probability of a race-to-2 series is p^2(3-2p) for per-game skill p; its
+// derivative at p=0.5 is 1.5x steeper than a single game's, so a bracket
+// result carries ~1.5x the signal about the underlying skill gap at the
+// operating point (p~0.5) most real matches sit at.
+const BRACKET_WEIGHT = 1.5;
+
 // Standard Elo, replayed across every stored match in chronological order (by
 // tournament date, then phase/round within it) so a player's rating carries
 // over between tournaments instead of resetting each time.
 export async function computePlayerElo(format: string | null, k = 32, base = 1500): Promise<PlayerElo[]> {
     const matches = await prisma.$queryRaw<MatchRow[]>`
-        SELECT m.player1, m.player2, m.winner
+        SELECT m.player1, m.player2, m.winner, m.phase
         FROM matches m
         JOIN tournaments t ON t.id = m.tournament_id
         WHERE (${format}::text IS NULL OR t.format = ${format})
@@ -50,9 +60,10 @@ export async function computePlayerElo(format: string | null, k = 32, base = 150
         const r2 = rating.get(m.player2) ?? base;
         const e1 = 1 / (1 + 10 ** ((r2 - r1) / 400));
         const s1 = m.winner === null ? 0.5 : m.winner === m.player1 ? 1 : 0;
+        const kEff = m.phase > 1 ? k * BRACKET_WEIGHT : k;
 
-        rating.set(m.player1, r1 + k * (s1 - e1));
-        rating.set(m.player2, r2 + k * (1 - s1 - (1 - e1)));
+        rating.set(m.player1, r1 + kEff * (s1 - e1));
+        rating.set(m.player2, r2 + kEff * (1 - s1 - (1 - e1)));
 
         const rec1 = getRecord(m.player1);
         const rec2 = getRecord(m.player2);

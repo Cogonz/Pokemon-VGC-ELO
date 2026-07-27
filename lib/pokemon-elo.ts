@@ -15,6 +15,7 @@ interface MatchRow {
     player1: string;
     player2: string;
     winner: string | null;
+    phase: number;
 }
 
 interface TeamRow {
@@ -35,7 +36,19 @@ interface TrainingExample {
     uniqueA: number[]; // species indices with feature +1 (unique to the winning-side-perspective team A)
     uniqueB: number[]; // species indices with feature -1
     y: number; // 1 = A won, 0 = B won, 0.5 = tie
+    weight: number; // sample weight in the regression loss/gradient
 }
+
+// Bracket rounds (phase > 1) are Bo3 in practice; only the match winner is
+// stored, not per-game results, so a Bo3 outcome already required winning
+// 2-of-3 -- inherently less noisy than a single Bo1 Swiss game. The win
+// probability of a race-to-2 series is p^2(3-2p) for per-game skill p; its
+// derivative at p=0.5 is 1.5x steeper than a single game's, so a bracket
+// result carries ~1.5x the signal about the underlying skill gap at the
+// operating point (p~0.5) most real matches sit at. Applied as a standard
+// weighted-MLE sample weight -- doesn't change the fitting procedure's shape
+// or stability, just how much each example's gradient/loss counts for.
+const BRACKET_WEIGHT = 1.5;
 
 const ELO_SCALE = 400 / Math.LN10; // converts natural-log-odds coefficients to standard 400-point Elo scale
 // Ridge strength, in the same (unnormalized, summed-over-examples) units as the data
@@ -73,7 +86,7 @@ function sigmoid(z: number): number {
 // version needed.
 export async function computePokemonElo(format: string | null, base = 1500): Promise<PokemonElo[]> {
     const matches = await prisma.$queryRaw<MatchRow[]>`
-        SELECT m.tournament_id, m.player1, m.player2, m.winner
+        SELECT m.tournament_id, m.player1, m.player2, m.winner, m.phase
         FROM matches m
         JOIN tournaments t ON t.id = m.tournament_id
         WHERE (${format}::text IS NULL OR t.format = ${format})
@@ -159,6 +172,7 @@ export async function computePokemonElo(format: string | null, base = 1500): Pro
             uniqueA: uniqueA.map(indexOf),
             uniqueB: uniqueB.map(indexOf),
             y: sA,
+            weight: m.phase > 1 ? BRACKET_WEIGHT : 1,
         });
     }
 
@@ -186,7 +200,7 @@ export async function computePokemonElo(format: string | null, base = 1500): Pro
             for (const i of ex.uniqueA) z += theta[i];
             for (const i of ex.uniqueB) z -= theta[i];
             const p = sigmoid(z);
-            const err = p - ex.y; // summed (unnormalized) cross-entropy gradient contribution
+            const err = (p - ex.y) * ex.weight; // summed (unnormalized) cross-entropy gradient contribution
 
             for (const i of ex.uniqueA) grad[i] += err;
             for (const i of ex.uniqueB) grad[i] -= err;
@@ -218,7 +232,7 @@ export async function computePokemonElo(format: string | null, base = 1500): Pro
         for (const i of ex.uniqueA) z += theta[i];
         for (const i of ex.uniqueB) z -= theta[i];
         const pClamped = Math.min(Math.max(sigmoid(z), 1e-12), 1 - 1e-12);
-        loss += -(ex.y * Math.log(pClamped) + (1 - ex.y) * Math.log(1 - pClamped));
+        loss += -(ex.y * Math.log(pClamped) + (1 - ex.y) * Math.log(1 - pClamped)) * ex.weight;
     }
     for (let i = 0; i < n; i++) loss += (L2_LAMBDA / 2) * theta[i] * theta[i];
     if (!Number.isFinite(loss)) {
