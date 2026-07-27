@@ -71,17 +71,20 @@ function sigmoid(z: number): number {
 // history). The L2 penalty pulls small-sample coefficients toward 0 (rating
 // 1500), replacing the separate post-hoc shrinkage formula the sequential
 // version needed.
-export async function computePokemonElo(base = 1500): Promise<PokemonElo[]> {
+export async function computePokemonElo(format: string | null, base = 1500): Promise<PokemonElo[]> {
     const matches = await prisma.$queryRaw<MatchRow[]>`
         SELECT m.tournament_id, m.player1, m.player2, m.winner
         FROM matches m
         JOIN tournaments t ON t.id = m.tournament_id
+        WHERE (${format}::text IS NULL OR t.format = ${format})
     `;
 
     const teamRows = await prisma.$queryRaw<TeamRow[]>`
         SELECT s.tournament_id, s.player, tp.species_id, tp.name
         FROM standings s
         JOIN team_pokemon tp ON tp.standing_id = s.id
+        JOIN tournaments t ON t.id = s.tournament_id
+        WHERE (${format}::text IS NULL OR t.format = ${format})
     `;
 
     const rosterKey = (tournamentId: string, player: string) => `${tournamentId}:${player}`;
