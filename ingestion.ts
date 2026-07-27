@@ -58,7 +58,8 @@ export async function fetchTournamentsPage(page: number): Promise<TournamentSumm
 // eligible (MIN_PLAYERS) tournaments are collected, a page comes back empty
 // or short (end of data), or MAX_PAGES is hit. Verified empirically that
 // `page` returns disjoint, chronologically-continuous ranges (no gaps or
-// overlap beyond a single boundary tournament).
+// overlap beyond a single boundary tournament). Used only to seed an empty
+// database -- collectNewTournaments is used for every run after that.
 export async function collectEligibleTournaments(count: number): Promise<TournamentSummary[]> {
     const eligible: TournamentSummary[] = [];
     let firstPage: TournamentSummary[] = [];
@@ -73,6 +74,46 @@ export async function collectEligibleTournaments(count: number): Promise<Tournam
     }
 
     return (eligible.length > 0 ? eligible : firstPage).slice(0, count);
+}
+
+export async function getLatestIngestedDate(): Promise<Date | null> {
+    const { rows } = await pool.query<{ max: Date | null }>('SELECT max(date) FROM tournaments');
+    return rows[0]?.max ?? null;
+}
+
+// Pages back through /tournaments until it reconnects with data already in
+// the database (a tournament dated at or before `since`), rather than
+// stopping at a fixed count. That guarantees no gap between runs by
+// construction -- each run picks up exactly where the last one left off,
+// regardless of how many tournaments happened in between -- and skips
+// re-fetching standings/pairings for anything already ingested. Returns
+// `hitSafetyCap: true` if MAX_PAGES was exhausted before reconnecting (a
+// real gap risk, e.g. after a very long gap between runs); the caller
+// should surface that rather than silently proceeding.
+export async function collectNewTournaments(
+    since: Date
+): Promise<{ tournaments: TournamentSummary[]; hitSafetyCap: boolean }> {
+    const collected: TournamentSummary[] = [];
+
+    for (let page = 1; page <= MAX_PAGES; page++) {
+        const batch = await fetchTournamentsPage(page);
+        if (batch.length === 0) return { tournaments: collected, hitSafetyCap: false };
+
+        let reconnected = false;
+        for (const t of batch) {
+            if ((t.players ?? 0) < MIN_PLAYERS) continue;
+            if (t.date && new Date(t.date) <= since) {
+                reconnected = true;
+                break; // sorted descending -- everything from here on is already ingested
+            }
+            collected.push(t);
+        }
+
+        if (reconnected) return { tournaments: collected, hitSafetyCap: false };
+        if (batch.length < PAGE_SIZE) return { tournaments: collected, hitSafetyCap: false }; // ran out of data first
+    }
+
+    return { tournaments: collected, hitSafetyCap: true };
 }
 
 export async function fetchStandings(tournamentId: string): Promise<StandingsResponse> {
@@ -171,10 +212,27 @@ async function ingestTournament(tournament: TournamentSummary): Promise<void> {
 }
 
 async function main() {
-    const toIngest = await collectEligibleTournaments(INGEST_COUNT);
+    const since = await getLatestIngestedDate();
+    let toIngest: TournamentSummary[];
+
+    if (since) {
+        console.log(`Latest ingested tournament: ${since.toISOString()}. Pulling everything newer...`);
+        const result = await collectNewTournaments(since);
+        toIngest = result.tournaments;
+        if (result.hitSafetyCap) {
+            console.warn(
+                `  WARNING: hit the ${MAX_PAGES}-page safety cap before reconnecting with existing data -- ` +
+                    `there may be a gap. Consider running again (it'll pick up further back from here).`
+            );
+        }
+    } else {
+        console.log('No prior data -- seeding with the most recent tournaments.');
+        toIngest = await collectEligibleTournaments(INGEST_COUNT);
+    }
 
     if (toIngest.length === 0) {
-        console.log('No tournaments returned -- check the endpoint/network.');
+        console.log('No new tournaments to ingest.');
+        await pool.end();
         return;
     }
 

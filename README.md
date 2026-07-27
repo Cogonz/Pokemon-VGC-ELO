@@ -44,7 +44,7 @@ Prerequisites: Node.js, a local Postgres instance running, and a `.env` file (se
 npm install
 createdb vgc_elo                # if it doesn't already exist
 psql vgc_elo -f db/schema.sql   # create the tables
-npm run ingest                  # pull recent tournaments from Limitless into Postgres
+npm run ingest                  # pull tournaments from Limitless into Postgres
 npm run dev                     # start the app at localhost:3000
 ```
 
@@ -66,7 +66,9 @@ Other scripts: `npm run typecheck`, `npm run build`.
 ## Project structure
 
 - [`ingestion.ts`](ingestion.ts) — pulls tournaments/standings/pairings from the Limitless
-  API and persists them to Postgres
+  API and persists them to Postgres. Incremental: the first run seeds recent history, every
+  run after that only pulls tournaments newer than whatever's already in the database, so it's
+  safe to re-run on a schedule (e.g. monthly) without re-fetching or losing older data
 - [`schemas.ts`](schemas.ts) — zod schemas for the Limitless API responses
 - [`secrets.ts`](secrets.ts) — AWS Secrets Manager lookup for the (optional) Limitless API key
 - [`db/schema.sql`](db/schema.sql) — the Postgres schema (`tournaments`, `standings`,
