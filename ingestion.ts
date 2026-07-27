@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { StandingsResponse, PairingsResponse } from './schemas.js';
 import { getLimitlessApiKey } from './secrets.js';
 import { pool } from './db.js';
@@ -7,7 +9,9 @@ import { pool } from './db.js';
 
 const BASE = 'https://play.limitlesstcg.com/api';
 const MIN_PLAYERS = 30; // only tournaments with real attendance are useful for Elo
-const INGEST_COUNT = 100; // Pokemon Elo needs a lot of match history for signal to accumulate per species
+const INGEST_COUNT = 250; // spans several pages of history now that pagination is wired up
+const PAGE_SIZE = 200;
+const MAX_PAGES = 10; // safety cap; ~50% of tournaments meet MIN_PLAYERS, so INGEST_COUNT=250 needs ~3 pages in practice
 
 interface TournamentSummary {
     id: string;
@@ -46,13 +50,29 @@ async function limitlessGet<T>(path: string, params: Record<string, string | num
     throw new Error(`Limitless API ${path} failed: rate limited after ${MAX_RETRIES} retries`);
 }
 
-export async function fetchTournaments(): Promise<TournamentSummary[]> {
-    return limitlessGet<TournamentSummary[]>('/tournaments', { game: 'VGC', limit: 200 });
+export async function fetchTournamentsPage(page: number): Promise<TournamentSummary[]> {
+    return limitlessGet<TournamentSummary[]>('/tournaments', { game: 'VGC', limit: PAGE_SIZE, page });
 }
 
-export async function pickRecentTournament(): Promise<TournamentSummary | undefined> {
-    const tournaments = await fetchTournaments();
-    return tournaments.find((t) => (t.players ?? 0) >= MIN_PLAYERS) ?? tournaments[0];
+// Pages back through /tournaments (page 1 = most recent) until `count`
+// eligible (MIN_PLAYERS) tournaments are collected, a page comes back empty
+// or short (end of data), or MAX_PAGES is hit. Verified empirically that
+// `page` returns disjoint, chronologically-continuous ranges (no gaps or
+// overlap beyond a single boundary tournament).
+export async function collectEligibleTournaments(count: number): Promise<TournamentSummary[]> {
+    const eligible: TournamentSummary[] = [];
+    let firstPage: TournamentSummary[] = [];
+
+    for (let page = 1; page <= MAX_PAGES && eligible.length < count; page++) {
+        const batch = await fetchTournamentsPage(page);
+        if (page === 1) firstPage = batch;
+        if (batch.length === 0) break;
+
+        eligible.push(...batch.filter((t) => (t.players ?? 0) >= MIN_PLAYERS));
+        if (batch.length < PAGE_SIZE) break; // short page -- no more data beyond this
+    }
+
+    return (eligible.length > 0 ? eligible : firstPage).slice(0, count);
 }
 
 export async function fetchStandings(tournamentId: string): Promise<StandingsResponse> {
@@ -151,9 +171,7 @@ async function ingestTournament(tournament: TournamentSummary): Promise<void> {
 }
 
 async function main() {
-    const tournaments = await fetchTournaments();
-    const eligible = tournaments.filter((t) => (t.players ?? 0) >= MIN_PLAYERS);
-    const toIngest = (eligible.length > 0 ? eligible : tournaments).slice(0, INGEST_COUNT);
+    const toIngest = await collectEligibleTournaments(INGEST_COUNT);
 
     if (toIngest.length === 0) {
         console.log('No tournaments returned -- check the endpoint/network.');
@@ -175,7 +193,13 @@ async function main() {
     await pool.end();
 }
 
-if (import.meta.url.endsWith('/ingestion.ts')) {
+// realpathSync on both sides resolves symlinks (e.g. macOS /tmp -> /private/tmp) so this
+// correctly distinguishes "run directly" from "imported by another script" -- a plain
+// `import.meta.url.endsWith('/ingestion.ts')` check is true in both cases, since it only
+// checks which file this is, not whether it's the entry point.
+const isMainModule = process.argv[1] != null && realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+
+if (isMainModule) {
     main().catch((err) => {
         console.error(err);
         process.exitCode = 1;
