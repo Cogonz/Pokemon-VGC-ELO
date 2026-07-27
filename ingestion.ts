@@ -12,6 +12,7 @@ const MIN_PLAYERS = 30; // only tournaments with real attendance are useful for 
 const INGEST_COUNT = 250; // spans several pages of history now that pagination is wired up
 const PAGE_SIZE = 200;
 const MAX_PAGES = 10; // safety cap; ~50% of tournaments meet MIN_PLAYERS, so INGEST_COUNT=250 needs ~3 pages in practice
+const BACKFILL_MAX_PAGES = 30; // a deliberate --until backfill walks through the already-covered range first
 
 interface TournamentSummary {
     id: string;
@@ -81,6 +82,11 @@ export async function getLatestIngestedDate(): Promise<Date | null> {
     return rows[0]?.max ?? null;
 }
 
+export async function getOldestIngestedDate(): Promise<Date | null> {
+    const { rows } = await pool.query<{ min: Date | null }>('SELECT min(date) FROM tournaments');
+    return rows[0]?.min ?? null;
+}
+
 // Pages back through /tournaments until it reconnects with data already in
 // the database (a tournament dated at or before `since`), rather than
 // stopping at a fixed count. That guarantees no gap between runs by
@@ -114,6 +120,40 @@ export async function collectNewTournaments(
     }
 
     return { tournaments: collected, hitSafetyCap: true };
+}
+
+// Deliberately extends history further back than routine runs reach (e.g.
+// "backfill to January"), rather than the incremental forward-catching-up
+// collectNewTournaments does. Skips everything at or after `beforeDate`
+// (the oldest tournament already ingested -- no point re-fetching it),
+// collects everything older than that down to `untilDate`, and stops once
+// it passes `untilDate` or runs out of page budget. Needs a much larger
+// page budget than routine runs since it has to walk through the entire
+// already-covered range before reaching new territory.
+export async function collectBackfillTournaments(
+    beforeDate: Date,
+    untilDate: Date,
+    maxPages: number
+): Promise<{ tournaments: TournamentSummary[]; reachedTarget: boolean }> {
+    const collected: TournamentSummary[] = [];
+
+    for (let page = 1; page <= maxPages; page++) {
+        const batch = await fetchTournamentsPage(page);
+        if (batch.length === 0) return { tournaments: collected, reachedTarget: true }; // ran out of API data
+
+        for (const t of batch) {
+            if ((t.players ?? 0) < MIN_PLAYERS) continue;
+            if (!t.date) continue;
+            const d = new Date(t.date);
+            if (d >= beforeDate) continue; // already ingested -- not this backfill's job
+            if (d < untilDate) return { tournaments: collected, reachedTarget: true }; // passed the target
+            collected.push(t);
+        }
+
+        if (batch.length < PAGE_SIZE) return { tournaments: collected, reachedTarget: true };
+    }
+
+    return { tournaments: collected, reachedTarget: false };
 }
 
 export async function fetchStandings(tournamentId: string): Promise<StandingsResponse> {
@@ -211,25 +251,7 @@ async function ingestTournament(tournament: TournamentSummary): Promise<void> {
     );
 }
 
-async function main() {
-    const since = await getLatestIngestedDate();
-    let toIngest: TournamentSummary[];
-
-    if (since) {
-        console.log(`Latest ingested tournament: ${since.toISOString()}. Pulling everything newer...`);
-        const result = await collectNewTournaments(since);
-        toIngest = result.tournaments;
-        if (result.hitSafetyCap) {
-            console.warn(
-                `  WARNING: hit the ${MAX_PAGES}-page safety cap before reconnecting with existing data -- ` +
-                    `there may be a gap. Consider running again (it'll pick up further back from here).`
-            );
-        }
-    } else {
-        console.log('No prior data -- seeding with the most recent tournaments.');
-        toIngest = await collectEligibleTournaments(INGEST_COUNT);
-    }
-
+async function ingestAll(toIngest: TournamentSummary[]): Promise<void> {
     if (toIngest.length === 0) {
         console.log('No new tournaments to ingest.');
         await pool.end();
@@ -249,6 +271,58 @@ async function main() {
 
     console.log(`Done. Persisted ${toIngest.length - failed}/${toIngest.length} tournament(s) to Postgres.`);
     await pool.end();
+}
+
+async function main() {
+    const untilArg = process.argv.find((a) => a.startsWith('--until='))?.slice('--until='.length);
+
+    if (untilArg) {
+        const until = new Date(untilArg);
+        if (Number.isNaN(until.getTime())) {
+            console.error(`Invalid --until date: ${untilArg} (expected e.g. --until=2026-01-01)`);
+            process.exitCode = 1;
+            return;
+        }
+
+        const oldest = await getOldestIngestedDate();
+        if (!oldest) {
+            console.log('No prior data -- run without --until first to seed recent history.');
+            await pool.end();
+            return;
+        }
+
+        console.log(`Backfilling from ${oldest.toISOString()} back to ${until.toISOString()}...`);
+        const result = await collectBackfillTournaments(oldest, until, BACKFILL_MAX_PAGES);
+        if (!result.reachedTarget) {
+            console.warn(
+                `  WARNING: hit the ${BACKFILL_MAX_PAGES}-page budget before reaching ${until.toISOString()} -- ` +
+                    `run again with --until=${untilArg} to continue further back from here.`
+            );
+        }
+
+        await ingestAll(result.tournaments);
+        return;
+    }
+
+    const since = await getLatestIngestedDate();
+    let toIngest: TournamentSummary[];
+
+    if (since) {
+        console.log(`Latest ingested tournament: ${since.toISOString()}. Pulling everything newer...`);
+        const result = await collectNewTournaments(since);
+        toIngest = result.tournaments;
+        if (result.hitSafetyCap) {
+            console.warn(
+                `  WARNING: hit the ${MAX_PAGES}-page safety cap before reconnecting with existing data -- ` +
+                    `there may be a gap. Consider running again (it'll pick up further back from here).`
+            );
+        }
+    } else {
+        console.log('No prior data -- seeding with the most recent tournaments.');
+        toIngest = await collectEligibleTournaments(INGEST_COUNT);
+    }
+
+    await ingestAll(toIngest);
 }
 
 // realpathSync on both sides resolves symlinks (e.g. macOS /tmp -> /private/tmp) so this

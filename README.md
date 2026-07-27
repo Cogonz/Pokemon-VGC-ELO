@@ -68,7 +68,9 @@ Other scripts: `npm run typecheck`, `npm run build`.
 - [`ingestion.ts`](ingestion.ts) — pulls tournaments/standings/pairings from the Limitless
   API and persists them to Postgres. Incremental: the first run seeds recent history, every
   run after that only pulls tournaments newer than whatever's already in the database, so it's
-  safe to re-run on a schedule (e.g. monthly) without re-fetching or losing older data
+  safe to re-run on a schedule (e.g. monthly) without re-fetching or losing older data. To
+  extend history further back (a one-off, can take a while), run
+  `npm run ingest -- --until=YYYY-MM-DD`
 - [`schemas.ts`](schemas.ts) — zod schemas for the Limitless API responses
 - [`secrets.ts`](secrets.ts) — AWS Secrets Manager lookup for the (optional) Limitless API key
 - [`db/schema.sql`](db/schema.sql) — the Postgres schema (`tournaments`, `standings`,
