@@ -1,25 +1,41 @@
 import { getPokemonUsage } from '@/lib/stats';
 import { computePlayerElo } from '@/lib/elo';
 import { computePokemonElo } from '@/lib/pokemon-elo';
+import { getAvailableFormats } from '@/lib/formats';
 import { UsageChart } from '@/components/UsageChart';
+import { RegulationSelect } from '@/components/RegulationSelect';
 
 export const dynamic = 'force-dynamic';
 
 const MIN_ELO_MATCHES = 3; // hide players with too few matches to trust their rating
 const MIN_POKEMON_ELO_MATCHES = 15; // hide Pokemon with too few non-mirrored matches to trust their rating
 
-export default async function Home() {
-    const [usage, elo, pokemonElo] = await Promise.all([getPokemonUsage(), computePlayerElo(), computePokemonElo()]);
+export default async function Home({ searchParams }: { searchParams: Promise<{ format?: string }> }) {
+    const { format: formatParam } = await searchParams;
+    const { options, current } = await getAvailableFormats();
+    const format = formatParam ?? current;
+
+    const [usage, elo, pokemonElo] = await Promise.all([
+        getPokemonUsage(format),
+        computePlayerElo(format),
+        computePokemonElo(format),
+    ]);
     const top = usage.slice(0, 15);
     const leaderboard = elo.filter((p) => p.wins + p.losses + p.ties >= MIN_ELO_MATCHES).slice(0, 20);
     const pokemonLeaderboard = pokemonElo.filter((p) => p.matches >= MIN_POKEMON_ELO_MATCHES).slice(0, 20);
 
     return (
         <main className="mx-auto max-w-4xl px-6 py-10">
-            <h1 className="text-2xl font-bold text-gray-900">Pokemon VGC ELO</h1>
-            <p className="mt-1 text-sm text-gray-500">
-                Usage rates and average placement, computed from ingested Limitless tournament data.
-            </p>
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <h1 className="text-2xl font-bold text-gray-900">Pokemon VGC ELO</h1>
+                    <p className="mt-1 text-sm text-gray-500">
+                        Usage rates and average placement for regulation {format ?? 'unknown'}, computed from
+                        ingested Limitless tournament data.
+                    </p>
+                </div>
+                <RegulationSelect options={options} selected={format} />
+            </div>
 
             {usage.length === 0 ? (
                 <p className="mt-8 text-gray-500">
@@ -31,8 +47,8 @@ export default async function Home() {
                     <section className="mt-8">
                         <h2 className="text-lg font-semibold text-gray-800">Player Elo leaderboard</h2>
                         <p className="mt-1 text-sm text-gray-500">
-                            Computed from match-level results across all ingested tournaments (min {MIN_ELO_MATCHES}{' '}
-                            matches shown).
+                            Computed from match-level results within this regulation (min {MIN_ELO_MATCHES} matches
+                            shown).
                         </p>
                         <table className="mt-3 w-full text-sm">
                             <thead>
@@ -106,7 +122,7 @@ export default async function Home() {
                                     <th className="py-2 pr-4">Pokemon</th>
                                     <th className="py-2 pr-4">Teams</th>
                                     <th className="py-2 pr-4">Usage %</th>
-                                    <th className="py-2">Avg placement</th>
+                                    <th className="py-2">Avg finish</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -116,7 +132,7 @@ export default async function Home() {
                                         <td className="py-2 pr-4 text-gray-600">{p.teams}</td>
                                         <td className="py-2 pr-4 text-gray-600">{p.usagePct.toFixed(1)}%</td>
                                         <td className="py-2 text-gray-600">
-                                            {p.avgPlacement != null ? p.avgPlacement.toFixed(1) : '—'}
+                                            {p.avgPercentile != null ? `top ${(p.avgPercentile * 100).toFixed(0)}%` : '—'}
                                         </td>
                                     </tr>
                                 ))}
