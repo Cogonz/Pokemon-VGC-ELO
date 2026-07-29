@@ -62,3 +62,21 @@ CREATE TABLE IF NOT EXISTS saved_teams (
 );
 
 CREATE INDEX IF NOT EXISTS saved_teams_user_idx ON saved_teams(user_id);
+
+-- Reference data sourced from PokeAPI (pokedex.ts), keyed by whatever
+-- species_id/move name values Limitless actually uses -- not a full
+-- Pokedex, just whatever we've actually ingested. The type effectiveness
+-- chart itself is static and lives in lib/type-chart.ts instead of here.
+CREATE TABLE IF NOT EXISTS pokemon_species (
+    species_id TEXT PRIMARY KEY,
+    type1      TEXT NOT NULL,
+    type2      TEXT
+);
+
+CREATE TABLE IF NOT EXISTS move_reference (
+    move_slug    TEXT PRIMARY KEY, -- lowercase-hyphenated, e.g. "dire-claw"
+    display_name TEXT NOT NULL,
+    type         TEXT NOT NULL,
+    damage_class TEXT NOT NULL, -- physical | special | status
+    power        INTEGER
+);

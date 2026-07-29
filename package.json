@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "ingest": "tsx ingestion.ts",
+    "pokedex": "tsx pokedex.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
