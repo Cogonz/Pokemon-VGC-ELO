@@ -2,23 +2,31 @@
 
 import { useState } from 'react';
 import type { SavedTeam } from '@/lib/teams';
+import { analyzeTeamWeaknesses, effectiveness } from '@/lib/type-analysis';
 
 interface PokemonOption {
     speciesId: string;
     name: string;
     rating: number;
     matches: number;
+    type1: string | null;
+    type2: string | null;
 }
 
 interface SlotPokemon {
     speciesId: string;
     name: string;
+    type1: string | null;
+    type2: string | null;
     item: string;
     ability: string;
     nature: string;
     tera: string;
     moves: [string, string, string, string];
 }
+
+const MAX_WEAKNESSES_SHOWN = 2;
+const COUNTERS_PER_WEAKNESS = 4;
 
 const TEAM_SIZE = 6;
 const emptySlots = (): (SlotPokemon | null)[] => Array(TEAM_SIZE).fill(null);
@@ -49,6 +57,13 @@ export function TeamBuilder({
     const suggestions = unpicked.slice(0, 5);
     const filteredOptions = unpicked.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
+    const currentTeam = slots.filter((s): s is SlotPokemon => s !== null);
+    // Type effectiveness is exact game mechanics, not a statistical estimate --
+    // unlike Elo, there's no small-sample concern here regardless of team size.
+    const weaknesses = analyzeTeamWeaknesses(
+        currentTeam.filter((s) => s.type1).map((s) => ({ type1: s.type1 as string, type2: s.type2 }))
+    ).slice(0, MAX_WEAKNESSES_SHOWN);
+
     function addPokemon(option: PokemonOption) {
         const emptyIndex = slots.findIndex((s) => s === null);
         if (emptyIndex === -1) return;
@@ -56,6 +71,8 @@ export function TeamBuilder({
         next[emptyIndex] = {
             speciesId: option.speciesId,
             name: option.name,
+            type1: option.type1,
+            type2: option.type2,
             item: '',
             ability: '',
             nature: '',
@@ -191,6 +208,43 @@ export function TeamBuilder({
 
             <section>
                 <h2 className="text-lg font-semibold text-gray-800">Your team</h2>
+
+                {weaknesses.length > 0 && (
+                    <div className="mt-2 space-y-2">
+                        {weaknesses.map((w) => {
+                            const counters = unpicked
+                                .filter((p) => p.type1 && effectiveness([p.type1, p.type2], w.type) < 1)
+                                .slice(0, COUNTERS_PER_WEAKNESS);
+                            const severe = !w.hasAnswer;
+                            return (
+                                <div
+                                    key={w.type}
+                                    className={`rounded border p-3 ${severe ? 'border-red-100 bg-red-50' : 'border-amber-100 bg-amber-50'}`}
+                                >
+                                    <p className={`text-xs font-medium ${severe ? 'text-red-700' : 'text-amber-700'}`}>
+                                        {w.weakCount}/{w.teamSize} weak to {w.type}
+                                        {severe && ' -- no answer on your team'}
+                                    </p>
+                                    {counters.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                            {counters.map((p) => (
+                                                <button
+                                                    key={p.speciesId}
+                                                    type="button"
+                                                    onClick={() => addPokemon(p)}
+                                                    className={`rounded-full border bg-white px-3 py-1 text-xs font-medium ${severe ? 'border-red-200 text-red-700 hover:bg-red-100' : 'border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+                                                >
+                                                    {p.name} &middot; {p.rating}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
                 <div className="mt-3 space-y-3">
                     {slots.map((slot, i) =>
                         slot ? (

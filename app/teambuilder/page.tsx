@@ -2,6 +2,7 @@ import { auth } from '@/auth';
 import { computePokemonElo } from '@/lib/pokemon-elo';
 import { getAvailableFormats } from '@/lib/formats';
 import { listSavedTeams } from '@/lib/teams';
+import { getSpeciesTypeMap } from '@/lib/species-types';
 import { RegulationSelect } from '@/components/RegulationSelect';
 import { TeamBuilder } from '@/components/TeamBuilder';
 
@@ -14,13 +15,24 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
     const { options, current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [session, pokemonElo] = await Promise.all([auth(), computePokemonElo(format)]);
+    const [session, pokemonElo, speciesTypes] = await Promise.all([
+        auth(),
+        computePokemonElo(format),
+        getSpeciesTypeMap(),
+    ]);
     const savedTeams = session?.user?.id ? await listSavedTeams(session.user.id) : [];
 
     const pokemonOptions = pokemonElo
         .filter((p) => p.matches >= MIN_PICKER_MATCHES)
         .sort((a, b) => b.rating - a.rating)
-        .map((p) => ({ speciesId: p.speciesId, name: p.name, rating: p.rating, matches: p.matches }));
+        .map((p) => ({
+            speciesId: p.speciesId,
+            name: p.name,
+            rating: p.rating,
+            matches: p.matches,
+            type1: speciesTypes[p.speciesId]?.type1 ?? null,
+            type2: speciesTypes[p.speciesId]?.type2 ?? null,
+        }));
 
     return (
         <main className="mx-auto max-w-4xl px-6 py-10">
