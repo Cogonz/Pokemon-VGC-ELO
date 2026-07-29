@@ -48,3 +48,17 @@ CREATE TABLE IF NOT EXISTS matches (
 
 CREATE INDEX IF NOT EXISTS matches_player1_idx ON matches(player1);
 CREATE INDEX IF NOT EXISTS matches_player2_idx ON matches(player2);
+
+-- User-built teams, saved by a signed-in Auth.js user ("User" table comes
+-- from the Auth.js Prisma adapter, not this file). `pokemon` mirrors
+-- SaveTeamRequest.pokemon (schemas.ts) as-is -- no relational queries are
+-- ever needed across it, so JSONB avoids a needless child table.
+CREATE TABLE IF NOT EXISTS saved_teams (
+    id         SERIAL PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    pokemon    JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS saved_teams_user_idx ON saved_teams(user_id);
