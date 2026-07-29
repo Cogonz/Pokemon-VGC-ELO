@@ -40,7 +40,14 @@ export function TeamBuilder({
     const [error, setError] = useState<string | null>(null);
 
     const filledCount = slots.filter(Boolean).length;
-    const filteredOptions = pokemonOptions.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
+    const pickedIds = new Set(slots.filter((s): s is SlotPokemon => s !== null).map((s) => s.speciesId));
+    // pokemonOptions arrives sorted by Elo descending (see app/teambuilder/page.tsx),
+    // so the first N left after excluding what's already picked are the strongest,
+    // best-tested Pokemon not yet on the team -- a real recommendation, not just a
+    // re-display of the full list.
+    const unpicked = pokemonOptions.filter((p) => !pickedIds.has(p.speciesId));
+    const suggestions = unpicked.slice(0, 5);
+    const filteredOptions = unpicked.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
     function addPokemon(option: PokemonOption) {
         const emptyIndex = slots.findIndex((s) => s === null);
@@ -137,6 +144,25 @@ export function TeamBuilder({
         <div className="mt-8 grid gap-8 md:grid-cols-2">
             <section>
                 <h2 className="text-lg font-semibold text-gray-800">Pick Pokemon ({filledCount}/6)</h2>
+
+                {suggestions.length > 0 && filledCount < TEAM_SIZE && (
+                    <div className="mt-2 rounded border border-indigo-100 bg-indigo-50 p-3">
+                        <p className="text-xs font-medium text-indigo-700">Recommended (strong, not on your team)</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {suggestions.map((p) => (
+                                <button
+                                    key={p.speciesId}
+                                    type="button"
+                                    onClick={() => addPokemon(p)}
+                                    className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                                >
+                                    {p.name} &middot; {p.rating}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 <input
                     type="text"
                     placeholder="Search..."
