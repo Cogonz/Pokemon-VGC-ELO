@@ -19,14 +19,18 @@ async function pokeapiGet<T>(path: string): Promise<T | null> {
         await sleep(REQUEST_DELAY_MS);
         const res = await fetch(`${BASE}${path}`, { headers: { 'User-Agent': 'vgc-elo/0.1' } });
         if (res.status === 404 || res.status === 400) return null; // no reconciliation match, or a slug PokeAPI can't parse -- either way, unresolved
-        if (res.status === 429) {
+        if (res.status === 429 || res.status >= 500) {
+            // 429 (rate limited) and 5xx (transient server error, e.g. a 502)
+            // both warrant a retry -- an unattended monthly run has nobody
+            // watching to re-trigger it if a brief upstream hiccup kills the
+            // whole sync partway through.
             await sleep(2 ** attempt * 1000);
             continue;
         }
         if (!res.ok) throw new Error(`PokeAPI ${path} failed: ${res.status} ${res.statusText}`);
         return res.json() as Promise<T>;
     }
-    throw new Error(`PokeAPI ${path} failed: rate limited after ${MAX_RETRIES} retries`);
+    throw new Error(`PokeAPI ${path} failed: still failing after ${MAX_RETRIES} retries`);
 }
 
 // Our ingested move names have inconsistent casing ("Dire claw" vs "Dire

@@ -5,3 +5,4 @@ dist/
 infra/cdk.out/
 infra/dist/
 *.tsbuildinfo
+logs/
