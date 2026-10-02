@@ -1,6 +1,5 @@
 import { getPokemonUsage } from '@/lib/stats';
-import { computePlayerElo } from '@/lib/elo';
-import { computePokemonElo } from '@/lib/pokemon-elo';
+import { getPlayerElo, getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
 import { UsageChart } from '@/components/UsageChart';
 import { RegulationSelect } from '@/components/RegulationSelect';
@@ -17,8 +16,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
 
     const [usage, elo, pokemonElo] = await Promise.all([
         getPokemonUsage(format),
-        computePlayerElo(format),
-        computePokemonElo(format),
+        getPlayerElo(format),
+        getPokemonElo(format),
     ]);
     const top = usage.slice(0, 15);
     const leaderboard = elo.filter((p) => p.wins + p.losses + p.ties >= MIN_ELO_MATCHES).slice(0, 20);
@@ -39,8 +38,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
 
             {usage.length === 0 ? (
                 <p className="mt-8 text-gray-500">
-                    No data yet. Run <code className="rounded bg-gray-100 px-1 py-0.5">npm run ingest</code> to pull a
-                    tournament first.
+                    No data yet. Tournament data is loaded by a scheduled ingestion job.
                 </p>
             ) : (
                 <>

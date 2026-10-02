@@ -1,7 +1,5 @@
-import { auth } from '@/auth';
-import { computePokemonElo } from '@/lib/pokemon-elo';
+import { getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
-import { listSavedTeams } from '@/lib/teams';
 import { getSpeciesTypeMap } from '@/lib/species-types';
 import { RegulationSelect } from '@/components/RegulationSelect';
 import { TeamBuilder } from '@/components/TeamBuilder';
@@ -15,12 +13,7 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
     const { options, current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [session, pokemonElo, speciesTypes] = await Promise.all([
-        auth(),
-        computePokemonElo(format),
-        getSpeciesTypeMap(),
-    ]);
-    const savedTeams = session?.user?.id ? await listSavedTeams(session.user.id) : [];
+    const [pokemonElo, speciesTypes] = await Promise.all([getPokemonElo(format), getSpeciesTypeMap()]);
 
     const pokemonOptions = pokemonElo
         .filter((p) => p.matches >= MIN_PICKER_MATCHES)
@@ -46,7 +39,7 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
                 <RegulationSelect options={options} selected={format} />
             </div>
 
-            <TeamBuilder pokemonOptions={pokemonOptions} signedIn={!!session?.user} initialTeams={savedTeams} />
+            <TeamBuilder pokemonOptions={pokemonOptions} />
         </main>
     );
 }

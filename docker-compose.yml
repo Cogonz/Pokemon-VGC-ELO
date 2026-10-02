@@ -15,9 +15,6 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://vgc:vgc@db:5432/vgc_elo
-      AUTH_SECRET: ${AUTH_SECRET}
-      AUTH_GITHUB_ID: ${AUTH_GITHUB_ID}
-      AUTH_GITHUB_SECRET: ${AUTH_GITHUB_SECRET}
     ports:
       - '3000:3000'
     depends_on:

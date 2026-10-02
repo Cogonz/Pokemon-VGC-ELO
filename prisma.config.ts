@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { defineConfig, env } from 'prisma/config';
+import { defineConfig } from 'prisma/config';
 
 export default defineConfig({
     schema: 'prisma/schema.prisma',
@@ -7,6 +7,8 @@ export default defineConfig({
         path: 'prisma/migrations',
     },
     datasource: {
-        url: env('DATABASE_URL'),
+        // Direct (unpooled) connection for schema changes when available (Neon/Vercel set
+        // DATABASE_URL_UNPOOLED); the placeholder just lets `prisma generate` run without a DB.
+        url: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? 'postgresql://placeholder:5432/placeholder',
     },
 });

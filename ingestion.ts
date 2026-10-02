@@ -1,8 +1,10 @@
+import 'dotenv/config';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { StandingsResponse, PairingsResponse } from './schemas.js';
-import { getLimitlessApiKey } from './secrets.js';
 import { pool } from './db.js';
+import { prisma } from './lib/prisma.js';
+import { refreshRatings } from './lib/ratings-store.js';
 
 // Ingestion from the Limitless TCG API.
 // Docs: https://docs.limitlesstcg.com/developer/tournaments
@@ -30,7 +32,7 @@ async function limitlessGet<T>(path: string, params: Record<string, string | num
     const url = new URL(`${BASE}${path}`);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
 
-    const apiKey = await getLimitlessApiKey();
+    const apiKey = process.env.LIMITLESS_API_KEY; // optional; unauthenticated requests work at a lower rate limit
     const headers: Record<string, string> = { 'User-Agent': 'vgc-elo/0.1' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 
@@ -252,25 +254,28 @@ async function ingestTournament(tournament: TournamentSummary): Promise<void> {
 }
 
 async function ingestAll(toIngest: TournamentSummary[]): Promise<void> {
+    let failed = 0;
     if (toIngest.length === 0) {
         console.log('No new tournaments to ingest.');
-        await pool.end();
-        return;
-    }
-
-    console.log(`Ingesting ${toIngest.length} tournament(s)...`);
-    let failed = 0;
-    for (const tournament of toIngest) {
-        try {
-            await ingestTournament(tournament);
-        } catch (err) {
-            failed++;
-            console.error(`  ${tournament.name}: failed -- ${(err as Error).message}`);
+    } else {
+        console.log(`Ingesting ${toIngest.length} tournament(s)...`);
+        for (const tournament of toIngest) {
+            try {
+                await ingestTournament(tournament);
+            } catch (err) {
+                failed++;
+                console.error(`  ${tournament.name}: failed -- ${(err as Error).message}`);
+            }
         }
+        console.log(`Done. Persisted ${toIngest.length - failed}/${toIngest.length} tournament(s) to Postgres.`);
     }
 
-    console.log(`Done. Persisted ${toIngest.length - failed}/${toIngest.length} tournament(s) to Postgres.`);
+    // Ratings are precomputed here, never in a request (see lib/ratings-store.ts).
+    // Also runs when nothing new was ingested so the tables are always populated.
+    await refreshRatings();
+    if (failed > 0) process.exitCode = 1;
     await pool.end();
+    await prisma.$disconnect();
 }
 
 async function main() {

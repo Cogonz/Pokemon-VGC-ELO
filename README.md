@@ -32,9 +32,9 @@ uses their whole registered roster as the "general" team for attribution purpose
 - **Next.js** (App Router) for the frontend and API routes, **Tailwind** + **Recharts** for
   the UI
 - **Postgres** + **Prisma** for storage
-- **Auth.js** with GitHub OAuth for sign-in
-- **Docker** for containerization, **AWS CDK** for infra (VPC/RDS/ECR/Fargate), **GitHub
-  Actions** for CI and deploy
+- **Vercel** (Hobby) hosting with **Neon** Postgres; **GitHub Actions** for CI and scheduled ingestion
+- Also in the repo as a showcase (not used for the Vercel deploy): **Docker** and **AWS CDK**
+  (VPC/RDS/ECR/Fargate)
 
 ## Getting started
 
@@ -52,14 +52,10 @@ npm run dev                     # start the app at localhost:3000
 
 ```
 DATABASE_URL="postgresql://<user>@localhost:5432/vgc_elo"
-AUTH_SECRET="..."               # generate with: openssl rand -base64 32
-AUTH_GITHUB_ID="..."            # from a GitHub OAuth App, see below
-AUTH_GITHUB_SECRET="..."
+# optional: LIMITLESS_API_KEY="..."   (higher Limitless rate limits)
 ```
 
-For GitHub sign-in to work locally, create an OAuth App at
-[github.com/settings/developers](https://github.com/settings/developers) with homepage
-`http://localhost:3000` and callback `http://localhost:3000/api/auth/callback/github`.
+`npm run ingest` also recomputes and stores the Elo ratings (see below); the site only reads them.
 
 Other scripts: `npm run typecheck`, `npm run build`.
 
@@ -72,18 +68,41 @@ Other scripts: `npm run typecheck`, `npm run build`.
   extend history further back (a one-off, can take a while), run
   `npm run ingest -- --until=YYYY-MM-DD`
 - [`schemas.ts`](schemas.ts) — zod schemas for the Limitless API responses
-- [`secrets.ts`](secrets.ts) — AWS Secrets Manager lookup for the (optional) Limitless API key
 - [`db/schema.sql`](db/schema.sql) — the Postgres schema (`tournaments`, `standings`,
-  `team_pokemon`, `matches`)
+  `team_pokemon`, `matches`, plus the precomputed `pokemon_elo` / `player_elo` tables)
 - [`lib/stats.ts`](lib/stats.ts), [`lib/elo.ts`](lib/elo.ts),
   [`lib/pokemon-elo.ts`](lib/pokemon-elo.ts) — the three stats computations described above
-- [`app/`](app) — the Next.js site (stats page + `/api/stats/*` routes + GitHub auth)
-- [`infra/`](infra) — AWS CDK stack for deployment
-- [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) — containerization
+- [`app/`](app) — the Next.js site (public stats page, team builder, `/api/stats/*` routes)
+- [`lib/ratings-store.ts`](lib/ratings-store.ts) — computes Elo ratings per regulation during ingestion, stores
+  them in Postgres, and reads them back for pages/API
+- [`infra/`](infra) — AWS CDK stack (showcase, not used for the Vercel deploy)
+- [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) — containerization (showcase)
 
-## Deployment
+## Deployment (Vercel + Neon)
 
-`infra/` defines a CDK stack (VPC, RDS Postgres, ECR, Fargate) for a real AWS deployment; see
-[`infra/lib/vgc-elo-stack.ts`](infra/lib/vgc-elo-stack.ts). This provisions real, billed
-resources and isn't wired up to run automatically — [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
-is manual-trigger only.
+The site is a stateless Next.js app on Vercel (Hobby) reading from Neon Postgres. Nothing heavy
+runs in a request: the joint Pokemon regression and player Elo replay take roughly 0.1-1.3 s of CPU
+per regulation locally (about 6 s for all 8 regulations), plus pulling ~150k match rows, so
+`npm run ingest` computes them once and stores them in `pokemon_elo` / `player_elo`. Pages and
+`/api/stats/*` just read those tables (a few ms).
+
+1. **Database.** In the Vercel project, Storage -> add Neon (Marketplace). It injects `DATABASE_URL`
+   (pooled, used at runtime) and `DATABASE_URL_UNPOOLED` (direct, used by ingestion and Prisma
+   schema commands).
+2. **Create tables** once, against the direct URL: `psql "$DATABASE_URL_UNPOOLED" -f db/schema.sql`
+   (or `DATABASE_URL_UNPOOLED=... npm run db:setup`, which runs `prisma db push`).
+3. **Deploy** by connecting the GitHub repo to Vercel (git integration builds on every push;
+   `postinstall` runs `prisma generate`). No `vercel.json` is needed.
+4. **Load data.** The [Ingest workflow](.github/workflows/ingest.yml) runs monthly and on manual
+   dispatch (Actions tab -> Ingest -> Run workflow). Repo secrets: `DATABASE_URL` (set it to the Neon
+   *unpooled* URL) and optionally `LIMITLESS_API_KEY`. Run it once manually to seed the database.
+
+Env vars: `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (set by Neon), optional `LIMITLESS_API_KEY`.
+
+`infra/`, the `Dockerfile` and `docker-compose.yml` define a separate AWS (VPC, RDS, ECR, Fargate)
+deployment. They stay as a showcase and are not used for, or required by, the Vercel deploy.
+
+## TODO
+
+- Optional login (Auth.js / GitHub OAuth) for saving teams from the team builder. Removed for now;
+  the stats pages are fully public and need no account.

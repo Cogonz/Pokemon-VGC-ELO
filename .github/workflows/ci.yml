@@ -19,10 +19,5 @@ jobs:
 
       - run: npm ci
 
-      - name: Prisma client (schema-only, no live DB needed)
-        run: |
-          echo "DATABASE_URL=postgresql://placeholder:5432/placeholder" > .env
-          npx prisma generate
-
       - run: npm run typecheck
       - run: npm run build

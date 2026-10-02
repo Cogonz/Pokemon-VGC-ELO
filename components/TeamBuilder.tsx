@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import type { SavedTeam } from '@/lib/teams';
 import { analyzeTeamWeaknesses, effectiveness } from '@/lib/type-analysis';
 
 interface PokemonOption {
@@ -31,21 +30,9 @@ const COUNTERS_PER_WEAKNESS = 4;
 const TEAM_SIZE = 6;
 const emptySlots = (): (SlotPokemon | null)[] => Array(TEAM_SIZE).fill(null);
 
-export function TeamBuilder({
-    pokemonOptions,
-    signedIn,
-    initialTeams,
-}: {
-    pokemonOptions: PokemonOption[];
-    signedIn: boolean;
-    initialTeams: SavedTeam[];
-}) {
+export function TeamBuilder({ pokemonOptions }: { pokemonOptions: PokemonOption[] }) {
     const [slots, setSlots] = useState<(SlotPokemon | null)[]>(emptySlots());
-    const [teamName, setTeamName] = useState('');
     const [search, setSearch] = useState('');
-    const [savedTeams, setSavedTeams] = useState(initialTeams);
-    const [saving, setSaving] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
     const filledCount = slots.filter(Boolean).length;
     const pickedIds = new Set(slots.filter((s): s is SlotPokemon => s !== null).map((s) => s.speciesId));
@@ -104,57 +91,6 @@ export function TeamBuilder({
         const next = [...slots];
         next[index] = { ...slot, moves };
         setSlots(next);
-    }
-
-    async function handleSave() {
-        setError(null);
-        const chosen = slots.filter((s): s is SlotPokemon => s !== null);
-        if (!teamName.trim()) {
-            setError('Give the team a name.');
-            return;
-        }
-        if (chosen.length === 0) {
-            setError('Add at least one Pokemon.');
-            return;
-        }
-
-        setSaving(true);
-        try {
-            const res = await fetch('/api/teams', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    name: teamName.trim(),
-                    pokemon: chosen.map((s) => ({
-                        speciesID: s.speciesId,
-                        item: s.item || null,
-                        ability: s.ability || null,
-                        nature: s.nature || null,
-                        tera: s.tera || null,
-                        moves: s.moves.filter((m) => m.trim() !== ''),
-                    })),
-                }),
-            });
-
-            if (!res.ok) {
-                const body = await res.json().catch(() => null);
-                throw new Error(body?.error ? JSON.stringify(body.error) : `Save failed (${res.status})`);
-            }
-
-            const saved: SavedTeam = await res.json();
-            setSavedTeams([saved, ...savedTeams]);
-            setSlots(emptySlots());
-            setTeamName('');
-        } catch (err) {
-            setError((err as Error).message);
-        } finally {
-            setSaving(false);
-        }
-    }
-
-    async function handleDelete(id: number) {
-        const res = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
-        if (res.ok) setSavedTeams(savedTeams.filter((t) => t.id !== id));
     }
 
     return (
@@ -307,57 +243,6 @@ export function TeamBuilder({
                         )
                     )}
                 </div>
-
-                <div className="mt-4">
-                    <input
-                        type="text"
-                        placeholder="Team name"
-                        value={teamName}
-                        onChange={(e) => setTeamName(e.target.value)}
-                        className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
-                    />
-                    {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-                    {signedIn ? (
-                        <button
-                            type="button"
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="mt-2 rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                        >
-                            {saving ? 'Saving...' : 'Save team'}
-                        </button>
-                    ) : (
-                        <p className="mt-2 text-sm text-gray-500">Sign in with GitHub to save teams.</p>
-                    )}
-                </div>
-
-                {savedTeams.length > 0 && (
-                    <div className="mt-8">
-                        <h3 className="text-sm font-semibold text-gray-700">Your saved teams</h3>
-                        <ul className="mt-2 space-y-2">
-                            {savedTeams.map((t) => (
-                                <li
-                                    key={t.id}
-                                    className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm"
-                                >
-                                    <div>
-                                        <span className="font-medium text-gray-900">{t.name}</span>
-                                        <span className="ml-2 text-gray-500">
-                                            {t.pokemon.map((p) => p.speciesID).join(', ')}
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDelete(t.id)}
-                                        className="text-xs text-gray-400 hover:text-red-600"
-                                    >
-                                        delete
-                                    </button>
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                )}
             </section>
         </div>
     );

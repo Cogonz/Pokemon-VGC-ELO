@@ -1,0 +1,29 @@
+name: Ingest
+
+# Pulls new Limitless tournaments into the production Postgres (Neon) and
+# recomputes the stored Elo ratings. Too long-running for a Vercel request, so
+# it runs here. Requires repo secrets: DATABASE_URL (use Neon's direct/unpooled
+# connection string) and optionally LIMITLESS_API_KEY.
+on:
+  schedule:
+    - cron: '0 6 1 * *' # 06:00 UTC on the 1st of every month
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run ingest
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          LIMITLESS_API_KEY: ${{ secrets.LIMITLESS_API_KEY }}

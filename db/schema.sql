@@ -1,5 +1,4 @@
--- Basic schema to validate Limitless ingestion locally.
--- One row per tournament / standing / team pokemon -- no Elo tables yet.
+-- Postgres schema (applies to local Postgres and Neon). Mirrors prisma/schema.prisma.
 
 CREATE TABLE IF NOT EXISTS tournaments (
     id      TEXT PRIMARY KEY,
@@ -49,19 +48,30 @@ CREATE TABLE IF NOT EXISTS matches (
 CREATE INDEX IF NOT EXISTS matches_player1_idx ON matches(player1);
 CREATE INDEX IF NOT EXISTS matches_player2_idx ON matches(player2);
 
--- User-built teams, saved by a signed-in Auth.js user ("User" table comes
--- from the Auth.js Prisma adapter, not this file). `pokemon` mirrors
--- SaveTeamRequest.pokemon (schemas.ts) as-is -- no relational queries are
--- ever needed across it, so JSONB avoids a needless child table.
-CREATE TABLE IF NOT EXISTS saved_teams (
-    id         SERIAL PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES "User"(id) ON DELETE CASCADE,
+-- Precomputed ratings, rewritten by ingestion (lib/ratings-store.ts) after every
+-- run so page/API requests only read. Never computed in a request.
+CREATE TABLE IF NOT EXISTS pokemon_elo (
+    format     TEXT NOT NULL,
+    species_id TEXT NOT NULL,
     name       TEXT NOT NULL,
-    pokemon    JSONB NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    rating     INTEGER NOT NULL,
+    wins       INTEGER NOT NULL,
+    losses     INTEGER NOT NULL,
+    ties       INTEGER NOT NULL,
+    matches    INTEGER NOT NULL,
+    PRIMARY KEY (format, species_id)
 );
 
-CREATE INDEX IF NOT EXISTS saved_teams_user_idx ON saved_teams(user_id);
+CREATE TABLE IF NOT EXISTS player_elo (
+    format TEXT NOT NULL,
+    player TEXT NOT NULL,
+    name   TEXT NOT NULL,
+    rating INTEGER NOT NULL,
+    wins   INTEGER NOT NULL,
+    losses INTEGER NOT NULL,
+    ties   INTEGER NOT NULL,
+    PRIMARY KEY (format, player)
+);
 
 -- Reference data sourced from PokeAPI (pokedex.ts), keyed by whatever
 -- species_id/move name values Limitless actually uses -- not a full

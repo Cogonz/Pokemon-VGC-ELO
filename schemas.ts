@@ -38,22 +38,3 @@ const LimitlessPairing = z.object({
 
 export const PairingsResponse = z.array(LimitlessPairing);
 export type PairingsResponse = z.infer<typeof PairingsResponse>
-
-
-// Schemas for Intaking Uesr Team Data
-
-const PokemonTeamInput = z.object({
-    speciesID: z.string().min(1),
-    item: z.string().nullable(),
-    ability: z.string().nullable(),
-    nature: z.string().nullable(),
-    tera: z.string().nullish(),
-    moves: z.array(z.string()).max(4)
-}).strict();
-
-export const SaveTeamRequest = z.object({
-    name: z.string().min(1).max(50),
-    pokemon: z.array(PokemonTeamInput).min(1).max(6)
-}).strict();
-
-export type SaveTeamRequest = z.infer<typeof SaveTeamRequest>;
