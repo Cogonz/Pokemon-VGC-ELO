@@ -100,3 +100,62 @@ model player_elo {
 
   @@id([format, player])
 }
+
+// --- Optional login (Auth.js + GitHub OAuth). Only needed for saved teams. ---
+// Sessions are JWT-based, so the Session table stays empty; it is kept because the
+// Auth.js Prisma adapter's schema expects it.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String?       @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  saved_teams   saved_teams[]
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model saved_teams {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  name       String
+  pokemon    Json
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  User       User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "saved_teams_user_idx")
+}

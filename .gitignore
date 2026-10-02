@@ -6,3 +6,5 @@ infra/cdk.out/
 infra/dist/
 *.tsbuildinfo
 logs/
+.vercel
+.env*

@@ -33,8 +33,9 @@ uses their whole registered roster as the "general" team for attribution purpose
   the UI
 - **Postgres** + **Prisma** for storage
 - **Vercel** (Hobby) hosting with **Neon** Postgres; **GitHub Actions** for CI and scheduled ingestion
-- Also in the repo as a showcase (not used for the Vercel deploy): **Docker** and **AWS CDK**
-  (VPC/RDS/ECR/Fargate)
+- **Auth.js** (GitHub OAuth, optional) for saved teams
+- Also in the repo (not used for the Vercel deploy): **Docker** and **AWS CDK** (VPC/RDS/ECR/Fargate
+  showcase stack, plus an optional scheduled-ingestion stack)
 
 ## Getting started
 
@@ -102,7 +103,65 @@ Env vars: `DATABASE_URL`, `DATABASE_URL_UNPOOLED` (set by Neon), optional `LIMIT
 `infra/`, the `Dockerfile` and `docker-compose.yml` define a separate AWS (VPC, RDS, ECR, Fargate)
 deployment. They stay as a showcase and are not used for, or required by, the Vercel deploy.
 
-## TODO
+## Optional login (saved teams)
 
-- Optional login (Auth.js / GitHub OAuth) for saving teams from the team builder. Removed for now;
-  the stats pages are fully public and need no account.
+Sign-in is optional. Stats pages and the team-builder picker are fully public; only **Save team /
+My Teams** needs a GitHub login (logged-out users see a "Sign in to save teams" prompt). If the
+`AUTH_*` variables are unset, login is simply hidden and the rest of the site is unaffected.
+
+Implementation: Auth.js (`next-auth@beta`, v5) + GitHub OAuth + the Prisma adapter, **JWT sessions**
+(no DB read per request, a good fit for serverless + Neon's pooled URL). The config is split:
+[`auth.config.ts`](auth.config.ts) is edge-safe (no adapter), [`auth.ts`](auth.ts) adds the Prisma
+adapter and only runs in the Node runtime. Saved-team API: `GET/POST /api/teams`,
+`GET/DELETE /api/teams/:id`. Every query is scoped by the signed-in user id (other users' teams
+return 404), input is validated with zod (max 6 Pokemon, bounded string lengths, 16 KB body, 50
+teams per user), and mutating routes require same-origin + `application/json` on top of Auth.js's
+SameSite=Lax cookies. GitHub OAuth tokens are not persisted.
+
+Setup:
+
+1. Create a GitHub OAuth app (GitHub -> Settings -> Developer settings -> OAuth Apps -> New):
+   - Homepage URL: `https://<your-domain>`
+   - Authorization callback URL: `https://<your-domain>/api/auth/callback/github`
+   - For local dev create a second app with callback `http://localhost:3000/api/auth/callback/github`.
+2. Generate a secret: `npx auth secret` (or `openssl rand -base64 32`).
+3. Set env vars (see [`.env.example`](.env.example)). Production:
+   ```bash
+   vercel env add AUTH_SECRET production
+   vercel env add AUTH_GITHUB_ID production
+   vercel env add AUTH_GITHUB_SECRET production
+   ```
+   Each command prompts for the value (don't paste secrets into files). `AUTH_TRUST_HOST=true` is
+   only needed when self-hosting/Docker behind a proxy; Vercel doesn't need it. For local dev put
+   the three values in `.env` (gitignored).
+4. Create the auth tables on existing databases (purely additive, idempotent, no data touched):
+   `psql "$DATABASE_URL_UNPOOLED" -f db/migrations/001_auth_saved_teams.sql`
+   (alternatively `DATABASE_URL_UNPOOLED=... npm run db:setup`, i.e. `prisma db push`; fresh
+   databases get everything from `db/schema.sql`). Do this before enabling the env vars.
+5. Redeploy.
+
+## Scheduled ingestion: GitHub Action vs AWS (ECS Fargate)
+
+Two interchangeable ways to run `npm run ingest` monthly against Neon:
+
+- **GitHub Action** ([`ingest.yml`](.github/workflows/ingest.yml)) - the default. Free, zero infra;
+  use this unless you have a reason not to.
+- **AWS scheduled task** ([`infra/lib/ingest-schedule-stack.ts`](infra/lib/ingest-schedule-stack.ts)) -
+  EventBridge cron -> one-off Fargate task running the Docker `ingest` target, logs in CloudWatch,
+  secrets from Secrets Manager. Use it if you want everything in AWS, longer/more controllable
+  runs, IAM-managed secrets, or failure alerts by email. It is standalone: no RDS, no NAT, no load
+  balancer. Run only one of the two schedulers.
+
+```bash
+docker build --target ingest -t vgc-elo-ingest .      # ingest-capable image (default target is the web app)
+cd infra && npm install
+npx cdk synth VgcIngestScheduleStack                    # no AWS credentials needed
+# options: -c ingestCron="0 6 1 * *" -c limitlessKeySecretName=vgc-elo/limitless-api-key \
+#          -c databaseUrlSecretName=vgc-elo/database-url-unpooled -c ingestImageTag=latest -c alertEmail=you@example.com
+```
+
+To actually deploy (manual, your AWS account): `cdk bootstrap`, create the Secrets Manager secret
+`vgc-elo/database-url-unpooled` (plain string = Neon *unpooled* URL; optionally a second one for
+`LIMITLESS_API_KEY`), `cdk deploy VgcIngestScheduleStack`, then push the image to the
+`vgc-elo-ingest` ECR repo from the stack outputs. The task has a 2h in-container timeout; ingestion
+is incremental, so a failed or timed-out run is resumed by the next run (or `aws ecs run-task`).

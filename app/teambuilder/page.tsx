@@ -1,4 +1,6 @@
 import { getPokemonElo } from '@/lib/ratings-store';
+import { getUserId, isAuthConfigured } from '@/lib/session';
+import { listSavedTeams, type SavedTeam } from '@/lib/teams';
 import { getAvailableFormats } from '@/lib/formats';
 import { getSpeciesTypeMap } from '@/lib/species-types';
 import { RegulationSelect } from '@/components/RegulationSelect';
@@ -13,7 +15,20 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
     const { options, current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [pokemonElo, speciesTypes] = await Promise.all([getPokemonElo(format), getSpeciesTypeMap()]);
+    const [pokemonElo, speciesTypes, userId] = await Promise.all([
+        getPokemonElo(format),
+        getSpeciesTypeMap(),
+        getUserId(),
+    ]);
+    // Saved teams are only loaded for a signed-in user; a failure here must not break the picker.
+    let savedTeams: SavedTeam[] = [];
+    if (userId) {
+        try {
+            savedTeams = await listSavedTeams(userId);
+        } catch {
+            savedTeams = [];
+        }
+    }
 
     const pokemonOptions = pokemonElo
         .filter((p) => p.matches >= MIN_PICKER_MATCHES)
@@ -39,7 +54,12 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
                 <RegulationSelect options={options} selected={format} />
             </div>
 
-            <TeamBuilder pokemonOptions={pokemonOptions} />
+            <TeamBuilder
+                pokemonOptions={pokemonOptions}
+                signedIn={!!userId}
+                loginAvailable={isAuthConfigured()}
+                initialTeams={savedTeams}
+            />
         </main>
     );
 }

@@ -38,3 +38,24 @@ const LimitlessPairing = z.object({
 
 export const PairingsResponse = z.array(LimitlessPairing);
 export type PairingsResponse = z.infer<typeof PairingsResponse>
+
+
+// Saved teams (optional login). Strict + length-capped: this is user-controlled input
+// that gets stored and rendered back, so bound everything.
+const short = (max: number) => z.string().trim().max(max);
+
+const PokemonTeamInput = z.object({
+    speciesID: z.string().trim().min(1).max(60),
+    item: short(60).nullable(),
+    ability: short(60).nullable(),
+    nature: short(30).nullable(),
+    tera: short(30).nullish(),
+    moves: z.array(short(60)).max(4),
+}).strict();
+
+export const SaveTeamRequest = z.object({
+    name: z.string().trim().min(1).max(50),
+    pokemon: z.array(PokemonTeamInput).min(1).max(6),
+}).strict();
+
+export type SaveTeamRequest = z.infer<typeof SaveTeamRequest>;

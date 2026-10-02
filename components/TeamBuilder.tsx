@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import type { SavedTeam } from '@/lib/teams';
 import { analyzeTeamWeaknesses, effectiveness } from '@/lib/type-analysis';
 
 interface PokemonOption {
@@ -30,9 +31,23 @@ const COUNTERS_PER_WEAKNESS = 4;
 const TEAM_SIZE = 6;
 const emptySlots = (): (SlotPokemon | null)[] => Array(TEAM_SIZE).fill(null);
 
-export function TeamBuilder({ pokemonOptions }: { pokemonOptions: PokemonOption[] }) {
+export function TeamBuilder({
+    pokemonOptions,
+    signedIn,
+    loginAvailable,
+    initialTeams,
+}: {
+    pokemonOptions: PokemonOption[];
+    signedIn: boolean;
+    loginAvailable: boolean;
+    initialTeams: SavedTeam[];
+}) {
     const [slots, setSlots] = useState<(SlotPokemon | null)[]>(emptySlots());
+    const [teamName, setTeamName] = useState('');
     const [search, setSearch] = useState('');
+    const [savedTeams, setSavedTeams] = useState(initialTeams);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const filledCount = slots.filter(Boolean).length;
     const pickedIds = new Set(slots.filter((s): s is SlotPokemon => s !== null).map((s) => s.speciesId));
@@ -91,6 +106,84 @@ export function TeamBuilder({ pokemonOptions }: { pokemonOptions: PokemonOption[
         const next = [...slots];
         next[index] = { ...slot, moves };
         setSlots(next);
+    }
+
+    async function handleSave() {
+        setError(null);
+        const chosen = slots.filter((s): s is SlotPokemon => s !== null);
+        if (!teamName.trim()) {
+            setError('Give the team a name.');
+            return;
+        }
+        if (chosen.length === 0) {
+            setError('Add at least one Pokemon.');
+            return;
+        }
+
+        setSaving(true);
+        try {
+            const res = await fetch('/api/teams', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: teamName.trim(),
+                    pokemon: chosen.map((s) => ({
+                        speciesID: s.speciesId,
+                        item: s.item.trim() || null,
+                        ability: s.ability.trim() || null,
+                        nature: s.nature.trim() || null,
+                        tera: s.tera.trim() || null,
+                        moves: s.moves.map((m) => m.trim()).filter((m) => m !== ''),
+                    })),
+                }),
+            });
+
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                if (res.status === 401) throw new Error('Your session expired. Sign in again to save.');
+                throw new Error(typeof body?.error === 'string' ? body.error : `Save failed (${res.status})`);
+            }
+
+            const saved: SavedTeam = await res.json();
+            setSavedTeams([saved, ...savedTeams]);
+            setTeamName('');
+        } catch (err) {
+            setError((err as Error).message);
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    function handleLoad(team: SavedTeam) {
+        const bySpecies = new Map(pokemonOptions.map((p) => [p.speciesId, p]));
+        const next = emptySlots();
+        team.pokemon.slice(0, TEAM_SIZE).forEach((p, i) => {
+            // Species not in the current regulation's picker keep their id as the display name.
+            const opt = bySpecies.get(p.speciesID);
+            const moves: SlotPokemon['moves'] = ['', '', '', ''];
+            p.moves.slice(0, 4).forEach((m, mi) => (moves[mi] = m));
+            next[i] = {
+                speciesId: p.speciesID,
+                name: opt?.name ?? p.speciesID,
+                type1: opt?.type1 ?? null,
+                type2: opt?.type2 ?? null,
+                item: p.item ?? '',
+                ability: p.ability ?? '',
+                nature: p.nature ?? '',
+                tera: p.tera ?? '',
+                moves,
+            };
+        });
+        setSlots(next);
+        setTeamName(team.name);
+        setError(null);
+    }
+
+    async function handleDelete(id: number) {
+        setError(null);
+        const res = await fetch(`/api/teams/${id}`, { method: 'DELETE' });
+        if (res.ok) setSavedTeams((teams) => teams.filter((t) => t.id !== id));
+        else setError(`Delete failed (${res.status})`);
     }
 
     return (
@@ -243,6 +336,81 @@ export function TeamBuilder({ pokemonOptions }: { pokemonOptions: PokemonOption[
                         )
                     )}
                 </div>
+
+                <div className="mt-4">
+                    {signedIn ? (
+                        <>
+                            <input
+                                type="text"
+                                placeholder="Team name"
+                                maxLength={50}
+                                value={teamName}
+                                onChange={(e) => setTeamName(e.target.value)}
+                                className="w-full rounded border border-gray-300 px-3 py-1.5 text-sm"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="mt-2 rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                            >
+                                {saving ? 'Saving...' : 'Save team'}
+                            </button>
+                        </>
+                    ) : loginAvailable ? (
+                        <p className="text-sm text-gray-500">
+                            <a
+                                href="/api/auth/signin?callbackUrl=/teambuilder"
+                                className="font-medium text-indigo-600 hover:text-indigo-800"
+                            >
+                                Sign in to save teams
+                            </a>{' '}
+                            (optional &mdash; the builder works without an account).
+                        </p>
+                    ) : null}
+                    {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+                </div>
+
+                {signedIn && (
+                    <div className="mt-8">
+                        <h3 className="text-sm font-semibold text-gray-700">My teams</h3>
+                        {savedTeams.length === 0 ? (
+                            <p className="mt-2 text-sm text-gray-400">No saved teams yet.</p>
+                        ) : (
+                            <ul className="mt-2 space-y-2">
+                                {savedTeams.map((t) => (
+                                    <li
+                                        key={t.id}
+                                        className="flex items-center justify-between gap-3 rounded border border-gray-200 px-3 py-2 text-sm"
+                                    >
+                                        <div className="min-w-0">
+                                            <span className="font-medium text-gray-900">{t.name}</span>
+                                            <span className="ml-2 break-words text-gray-500">
+                                                {t.pokemon.map((p) => p.speciesID).join(', ')}
+                                            </span>
+                                        </div>
+                                        <div className="flex shrink-0 gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleLoad(t)}
+                                                className="text-xs text-indigo-600 hover:text-indigo-800"
+                                            >
+                                                load
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleDelete(t.id)}
+                                                className="text-xs text-gray-400 hover:text-red-600"
+                                            >
+                                                delete
+                                            </button>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </div>
+                )}
             </section>
         </div>
     );
