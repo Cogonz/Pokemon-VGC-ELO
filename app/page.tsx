@@ -3,14 +3,17 @@ import { getPlayerElo, getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
 import { UsageChart } from '@/components/UsageChart';
 import { RegulationSelect } from '@/components/RegulationSelect';
+import { PokemonTable, type PokemonRow } from '@/components/PokemonTable';
+import { PlayerControls, PLAYER_SORTS, type PlayerSort } from '@/components/PlayerControls';
 
 export const dynamic = 'force-dynamic';
 
 const MIN_ELO_MATCHES = 3; // hide players with too few matches to trust their rating
 const MIN_POKEMON_ELO_MATCHES = 15; // hide Pokemon with too few non-mirrored matches to trust their rating
 
-export default async function Home({ searchParams }: { searchParams: Promise<{ format?: string }> }) {
-    const { format: formatParam } = await searchParams;
+export default async function Home({ searchParams }: { searchParams: Promise<{ format?: string; pq?: string; ps?: string }> }) {
+    const { format: formatParam, pq = '', ps } = await searchParams;
+    const playerSort: PlayerSort = ps && ps in PLAYER_SORTS ? (ps as PlayerSort) : 'elo';
     const { options, current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
@@ -20,8 +23,39 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
         getPokemonElo(format),
     ]);
     const top = usage.slice(0, 15);
-    const leaderboard = elo.filter((p) => p.wins + p.losses + p.ties >= MIN_ELO_MATCHES).slice(0, 20);
-    const pokemonLeaderboard = pokemonElo.filter((p) => p.matches >= MIN_POKEMON_ELO_MATCHES).slice(0, 20);
+    const playerQuery = pq.trim().toLowerCase();
+    const games = (p: { wins: number; losses: number; ties: number }) => p.wins + p.losses + p.ties;
+    const eligiblePlayers = elo.filter((p) => games(p) >= MIN_ELO_MATCHES);
+    const matchedPlayers = playerQuery
+        ? eligiblePlayers.filter((p) => p.name.toLowerCase().includes(playerQuery))
+        : eligiblePlayers;
+    const playerCompare: Record<PlayerSort, (a: (typeof elo)[number], b: (typeof elo)[number]) => number> = {
+        elo: (a, b) => b.rating - a.rating,
+        matches: (a, b) => games(b) - games(a),
+        // shrunk toward 50% so small samples don't dominate (see PokemonTable's winRate)
+        record: (a, b) => (b.wins + 5) / (games(b) + 10) - (a.wins + 5) / (games(a) + 10) || games(b) - games(a),
+    };
+    const leaderboard = [...matchedPlayers].sort((a, b) => playerCompare[playerSort](a, b) || a.name.localeCompare(b.name)).slice(0, 20);
+
+    const eloById = new Map(pokemonElo.map((p) => [p.speciesId, p]));
+    const usageById = new Map(usage.map((u) => [u.speciesId, u]));
+    const pokemonRows: PokemonRow[] = [...new Set([...eloById.keys(), ...usageById.keys()])].map((id) => {
+        const e = eloById.get(id);
+        const u = usageById.get(id);
+        return {
+            speciesId: id,
+            name: (e?.name ?? u?.name)!,
+            rating: e?.rating ?? null,
+            wins: e?.wins ?? 0,
+            losses: e?.losses ?? 0,
+            ties: e?.ties ?? 0,
+            matches: e?.matches ?? 0,
+            teams: u?.teams ?? 0,
+            usagePct: u?.usagePct ?? 0,
+            avgPercentile: u?.avgPercentile ?? null,
+        };
+    });
+    const pokemonLeaderboard = pokemonRows.filter((p) => p.matches >= MIN_POKEMON_ELO_MATCHES);
 
     return (
         <main className="mx-auto max-w-4xl px-6 py-10">
@@ -48,13 +82,15 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                             Computed from match-level results within this regulation (min {MIN_ELO_MATCHES} matches
                             shown).
                         </p>
+                        <PlayerControls query={pq} sort={playerSort} />
                         <table className="mt-3 w-full text-sm">
                             <thead>
                                 <tr className="border-b text-left text-gray-500">
                                     <th className="py-2 pr-4">#</th>
                                     <th className="py-2 pr-4">Player</th>
                                     <th className="py-2 pr-4">Elo</th>
-                                    <th className="py-2">Record</th>
+                                    <th className="py-2 pr-4">Record</th>
+                                    <th className="py-2">Matches</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -63,13 +99,26 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                                         <td className="py-2 pr-4 text-gray-500">{i + 1}</td>
                                         <td className="py-2 pr-4 font-medium text-gray-900">{p.name}</td>
                                         <td className="py-2 pr-4 text-gray-600">{p.rating}</td>
-                                        <td className="py-2 text-gray-600">
+                                        <td className="py-2 pr-4 text-gray-600">
                                             {p.wins}-{p.losses}-{p.ties}
                                         </td>
+                                        <td className="py-2 text-gray-600">{games(p)}</td>
                                     </tr>
                                 ))}
+                                {leaderboard.length === 0 && (
+                                    <tr>
+                                        <td colSpan={5} className="py-4 text-gray-500">
+                                            No players match &ldquo;{pq}&rdquo;.
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
+                        {matchedPlayers.length > leaderboard.length && (
+                            <p className="mt-2 text-xs text-gray-400">
+                                Showing top {leaderboard.length} of {matchedPlayers.length} players. Search to find a specific player.
+                            </p>
+                        )}
                     </section>
 
                     <section className="mt-8">
@@ -81,30 +130,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                             hold an extreme rating a larger one wouldn&apos;t support (min {MIN_POKEMON_ELO_MATCHES}{' '}
                             matches shown).
                         </p>
-                        <table className="mt-3 w-full text-sm">
-                            <thead>
-                                <tr className="border-b text-left text-gray-500">
-                                    <th className="py-2 pr-4">#</th>
-                                    <th className="py-2 pr-4">Pokemon</th>
-                                    <th className="py-2 pr-4">Elo</th>
-                                    <th className="py-2 pr-4">Record</th>
-                                    <th className="py-2">Matches</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {pokemonLeaderboard.map((p, i) => (
-                                    <tr key={p.speciesId} className="border-b last:border-0">
-                                        <td className="py-2 pr-4 text-gray-500">{i + 1}</td>
-                                        <td className="py-2 pr-4 font-medium text-gray-900">{p.name}</td>
-                                        <td className="py-2 pr-4 text-gray-600">{p.rating}</td>
-                                        <td className="py-2 pr-4 text-gray-600">
-                                            {p.wins}-{p.losses}-{p.ties}
-                                        </td>
-                                        <td className="py-2 text-gray-600">{p.matches}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <PokemonTable
+                            rows={pokemonLeaderboard}
+                            sortOptions={['elo', 'usage', 'record']}
+                            defaultSort="elo"
+                            columns={['elo', 'record', 'usage']}
+                        />
                     </section>
 
                     <section className="mt-8">
@@ -114,28 +145,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
 
                     <section className="mt-8">
                         <h2 className="text-lg font-semibold text-gray-800">All Pokemon</h2>
-                        <table className="mt-3 w-full text-sm">
-                            <thead>
-                                <tr className="border-b text-left text-gray-500">
-                                    <th className="py-2 pr-4">Pokemon</th>
-                                    <th className="py-2 pr-4">Teams</th>
-                                    <th className="py-2 pr-4">Usage %</th>
-                                    <th className="py-2">Avg finish</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {usage.map((p) => (
-                                    <tr key={p.speciesId} className="border-b last:border-0">
-                                        <td className="py-2 pr-4 font-medium text-gray-900">{p.name}</td>
-                                        <td className="py-2 pr-4 text-gray-600">{p.teams}</td>
-                                        <td className="py-2 pr-4 text-gray-600">{p.usagePct.toFixed(1)}%</td>
-                                        <td className="py-2 text-gray-600">
-                                            {p.avgPercentile != null ? `top ${(p.avgPercentile * 100).toFixed(0)}%` : '—'}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                        <PokemonTable
+                            rows={pokemonRows}
+                            sortOptions={['usage', 'elo', 'record', 'finish']}
+                            defaultSort="usage"
+                            columns={['usage', 'finish', 'elo', 'record']}
+                        />
                     </section>
                 </>
             )}

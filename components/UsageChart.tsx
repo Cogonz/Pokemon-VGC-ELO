@@ -11,7 +11,7 @@ export function UsageChart({ data }: { data: PokemonUsage[] }) {
                 <XAxis dataKey="name" angle={-40} textAnchor="end" interval={0} height={60} tick={{ fontSize: 12 }} />
                 <YAxis unit="%" width={40} tick={{ fontSize: 12 }} />
                 <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
-                <Bar dataKey="usagePct" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="usagePct" name="Usage" fill="#4f46e5" radius={[4, 4, 0, 0]} />
             </BarChart>
         </ResponsiveContainer>
     );
