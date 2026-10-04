@@ -1,28 +1,27 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
+import { Suspense } from 'react';
 import './globals.css';
 import { AuthStatus } from '@/components/AuthStatus';
+import { SiteHeader } from '@/components/SiteHeader';
+import { getAvailableFormats } from '@/lib/formats';
 
 export const metadata: Metadata = {
     title: 'Pokemon VGC ELO',
     description: 'VGC teambuilding and usage stats',
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export const dynamic = 'force-dynamic';
+
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+    const { options, current } = await getAvailableFormats();
     return (
         <html lang="en">
             <body>
-                <header className="flex items-center justify-between border-b px-6 py-3">
-                    <nav className="flex gap-4 text-sm font-medium text-gray-600">
-                        <Link href="/" className="hover:text-gray-900">
-                            Stats
-                        </Link>
-                        <Link href="/teambuilder" className="hover:text-gray-900">
-                            Team Builder
-                        </Link>
-                    </nav>
-                    <AuthStatus />
-                </header>
+                <Suspense fallback={<header className="border-b px-6 py-3 text-sm">&nbsp;</header>}>
+                    <SiteHeader options={options} current={current}>
+                        <AuthStatus />
+                    </SiteHeader>
+                </Suspense>
                 {children}
             </body>
         </html>

@@ -3,7 +3,6 @@ import { getUserId, isAuthConfigured } from '@/lib/session';
 import { listSavedTeams, type SavedTeam } from '@/lib/teams';
 import { getAvailableFormats } from '@/lib/formats';
 import { getSpeciesTypeMap } from '@/lib/species-types';
-import { RegulationSelect } from '@/components/RegulationSelect';
 import { TeamBuilder } from '@/components/TeamBuilder';
 
 export const dynamic = 'force-dynamic';
@@ -12,7 +11,7 @@ const MIN_PICKER_MATCHES = 15; // same trust threshold as the Pokemon Elo leader
 
 export default async function TeamBuilderPage({ searchParams }: { searchParams: Promise<{ format?: string }> }) {
     const { format: formatParam } = await searchParams;
-    const { options, current } = await getAvailableFormats();
+    const { current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
     const [pokemonElo, speciesTypes, userId] = await Promise.all([
@@ -51,7 +50,6 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
                         Pick Pokemon sorted by Elo for regulation {format ?? 'unknown'}.
                     </p>
                 </div>
-                <RegulationSelect options={options} selected={format} />
             </div>
 
             <TeamBuilder

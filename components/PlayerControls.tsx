@@ -2,9 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { PLAYER_SORTS, type PlayerSort } from '@/lib/leaderboards';
 
-export const PLAYER_SORTS = { elo: 'Elo', matches: 'Total matches', record: 'W-L record' } as const;
-export type PlayerSort = keyof typeof PLAYER_SORTS;
 
 // The player list is too large (10k+ per regulation) to ship to the browser, so search and
 // sort live in the URL (?pq=, ?ps=) and the server filters before rendering.
