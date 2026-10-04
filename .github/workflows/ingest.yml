@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 6 1 * *' # 06:00 UTC on the 1st of every month
   workflow_dispatch:
+    inputs:
+      until:
+        description: 'Optional backfill: extend history back to this date (YYYY-MM-DD), e.g. 2025-12-31'
+        required: false
+        default: ''
 
 jobs:
   ingest:
@@ -23,7 +28,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run ingest
+      - run: npm run ingest -- ${{ inputs.until != '' && format('--until={0}', inputs.until) || '' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LIMITLESS_API_KEY: ${{ secrets.LIMITLESS_API_KEY }}
