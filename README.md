@@ -81,6 +81,8 @@ Other scripts: `npm run typecheck`, `npm run build`.
 
 ## Deployment (Vercel + Neon)
 
+Production URL: https://vgcelo.vercel.app (Vercel project `vgcelo`, linked from the portfolio site).
+
 The site is a stateless Next.js app on Vercel (Hobby) reading from Neon Postgres. Nothing heavy
 runs in a request: the joint Pokemon regression and player Elo replay take roughly 0.1-1.3 s of CPU
 per regulation locally (about 6 s for all 8 regulations), plus pulling ~150k match rows, so
@@ -121,8 +123,8 @@ SameSite=Lax cookies. GitHub OAuth tokens are not persisted.
 Setup:
 
 1. Create a GitHub OAuth app (GitHub -> Settings -> Developer settings -> OAuth Apps -> New):
-   - Homepage URL: `https://<your-domain>`
-   - Authorization callback URL: `https://<your-domain>/api/auth/callback/github`
+   - Homepage URL: `https://vgcelo.vercel.app`
+   - Authorization callback URL: `https://vgcelo.vercel.app/api/auth/callback/github`
    - For local dev create a second app with callback `http://localhost:3000/api/auth/callback/github`.
 2. Generate a secret: `npx auth secret` (or `openssl rand -base64 32`).
 3. Set env vars (see [`.env.example`](.env.example)). Production:

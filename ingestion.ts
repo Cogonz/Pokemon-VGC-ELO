@@ -27,6 +27,11 @@ interface TournamentSummary {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const REQUEST_DELAY_MS = 400;
 const MAX_RETRIES = 5;
+const BATCH_SIZE = 1000; // rows per batched INSERT
+
+function* chunked<T>(items: T[], size: number): Generator<T[]> {
+    for (let i = 0; i < items.length; i += size) yield items.slice(i, i + size);
+}
 
 async function limitlessGet<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
     const url = new URL(`${BASE}${path}`);
@@ -180,25 +185,64 @@ export async function persistTournament(tournament: TournamentSummary, standings
             [tournament.id, tournament.name, tournament.format ?? null, tournament.date ?? null, tournament.players ?? null]
         );
 
-        for (const s of standings) {
-            const { rows } = await client.query<{ id: number }>(
-                `INSERT INTO standings (tournament_id, player, name, placement, wins, losses, ties)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
-                 ON CONFLICT (tournament_id, player) DO UPDATE
-                     SET name = $3, placement = $4, wins = $5, losses = $6, ties = $7
-                 RETURNING id`,
-                [tournament.id, s.player, s.name, s.placing, s.record.wins, s.record.losses, s.record.ties]
-            );
-            const standingId = rows[0].id;
+        // Batched (one round trip per chunk, not per row): ingestion runs from GitHub Actions
+        // against a remote Neon database, where per-row inserts made a seed run take hours.
+        const byPlayer = new Map<string, (typeof standings)[number]>();
+        for (const s of standings) byPlayer.set(s.player, s); // last entry wins on duplicate players
+        const unique = [...byPlayer.values()];
 
-            await client.query('DELETE FROM team_pokemon WHERE standing_id = $1', [standingId]);
-            for (const p of s.decklist ?? []) {
-                await client.query(
-                    `INSERT INTO team_pokemon (standing_id, species_id, name, item, ability, nature, tera, moves)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                    [standingId, p.id, p.name, p.item ?? null, p.ability ?? null, p.nature ?? null, p.tera ?? null, p.attacks]
-                );
-            }
+        const standingIds = new Map<string, number>();
+        for (const chunk of chunked(unique, BATCH_SIZE)) {
+            const { rows } = await client.query<{ id: number; player: string }>(
+                `INSERT INTO standings (tournament_id, player, name, placement, wins, losses, ties)
+                 SELECT $1, r.player, r.name, r.placement, r.wins, r.losses, r.ties
+                 FROM jsonb_to_recordset($2::jsonb)
+                     AS r(player text, name text, placement int, wins int, losses int, ties int)
+                 ON CONFLICT (tournament_id, player) DO UPDATE
+                     SET name = EXCLUDED.name, placement = EXCLUDED.placement, wins = EXCLUDED.wins,
+                         losses = EXCLUDED.losses, ties = EXCLUDED.ties
+                 RETURNING id, player`,
+                [
+                    tournament.id,
+                    JSON.stringify(
+                        chunk.map((s) => ({
+                            player: s.player,
+                            name: s.name,
+                            placement: s.placing ?? null,
+                            wins: s.record.wins,
+                            losses: s.record.losses,
+                            ties: s.record.ties,
+                        }))
+                    ),
+                ]
+            );
+            for (const row of rows) standingIds.set(row.player, row.id);
+        }
+
+        await client.query('DELETE FROM team_pokemon WHERE standing_id = ANY($1::int[])', [[...standingIds.values()]]);
+
+        const team = unique.flatMap((s) =>
+            (s.decklist ?? []).map((p) => ({
+                standing_id: standingIds.get(s.player),
+                species_id: p.id,
+                name: p.name,
+                item: p.item ?? null,
+                ability: p.ability ?? null,
+                nature: p.nature ?? null,
+                tera: p.tera ?? null,
+                moves: p.attacks ?? [],
+            }))
+        );
+        for (const chunk of chunked(team, BATCH_SIZE)) {
+            await client.query(
+                `INSERT INTO team_pokemon (standing_id, species_id, name, item, ability, nature, tera, moves)
+                 SELECT r.standing_id, r.species_id, r.name, r.item, r.ability, r.nature, r.tera,
+                        ARRAY(SELECT jsonb_array_elements_text(r.moves))
+                 FROM jsonb_to_recordset($1::jsonb)
+                     AS r(standing_id int, species_id text, name text, item text, ability text,
+                          nature text, tera text, moves jsonb)`,
+                [JSON.stringify(chunk)]
+            );
         }
 
         await client.query('COMMIT');
@@ -216,18 +260,30 @@ export async function persistMatches(tournamentId: string, pairings: PairingsRes
     try {
         await client.query('BEGIN');
 
+        const rows = new Map<string, { phase: number; round: number; player1: string; player2: string; winner: string | null }>();
         for (const m of pairings) {
             if (!m.player1 || !m.player2) continue; // bye / no-show
             if (m.winner === -1) continue; // double loss -- not a usable result
             const winner = m.winner === 0 ? null : String(m.winner); // null = tie
+            rows.set(JSON.stringify([m.phase, m.round, m.player1, m.player2]), {
+                phase: m.phase,
+                round: m.round,
+                player1: m.player1,
+                player2: m.player2,
+                winner,
+            });
+            stored++;
+        }
 
+        for (const chunk of chunked([...rows.values()], BATCH_SIZE)) {
             await client.query(
                 `INSERT INTO matches (tournament_id, phase, round, player1, player2, winner)
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 ON CONFLICT (tournament_id, phase, round, player1, player2) DO UPDATE SET winner = $6`,
-                [tournamentId, m.phase, m.round, m.player1, m.player2, winner]
+                 SELECT $1, r.phase, r.round, r.player1, r.player2, r.winner
+                 FROM jsonb_to_recordset($2::jsonb)
+                     AS r(phase int, round int, player1 text, player2 text, winner text)
+                 ON CONFLICT (tournament_id, phase, round, player1, player2) DO UPDATE SET winner = EXCLUDED.winner`,
+                [tournamentId, JSON.stringify(chunk)]
             );
-            stored++;
         }
 
         await client.query('COMMIT');
