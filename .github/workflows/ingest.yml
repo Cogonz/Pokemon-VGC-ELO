@@ -32,3 +32,9 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LIMITLESS_API_KEY: ${{ secrets.LIMITLESS_API_KEY }}
+
+      # Fills pokemon_species (types) and move_reference from PokeAPI for any species the ingest
+      # just saw. The site's type badges and team-weakness suggestions read these tables.
+      - run: npm run pokedex
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

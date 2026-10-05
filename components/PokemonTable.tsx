@@ -2,6 +2,22 @@
 
 import { useMemo, useState } from 'react';
 import { AdjustedToggle } from '@/components/AdjustedToggle';
+import { Sprite } from '@/components/Sprite';
+import {
+    EloBar,
+    RankBadge,
+    SearchInput,
+    SegmentedControl,
+    TABLE,
+    TABLE_WRAP,
+    TD,
+    TH,
+    THEAD,
+    TR,
+    TypeBadge,
+    UsageBar,
+    WinBar,
+} from '@/components/ui';
 import { usageAdjustedScore } from '@/lib/recommend';
 
 export interface PokemonRow {
@@ -15,6 +31,8 @@ export interface PokemonRow {
     teams: number;
     usagePct: number;
     avgPercentile: number | null;
+    type1: string | null;
+    type2: string | null;
 }
 
 type SortKey = 'elo' | 'usage' | 'record' | 'finish';
@@ -30,12 +48,12 @@ const SORT_LABELS: Record<SortKey, string> = {
 // doesn't outrank a 1000-game record.
 const winRate = (r: PokemonRow) => (r.wins + 10) / (r.matches + 20);
 
-// Descending for everything except average finish (lower percentile = better).
-// Rows missing the sort value always go last.
 // The displayed/sorted Elo: raw, or shrunk toward 1500 by how rarely the Pokemon is played.
 const eloOf = (r: PokemonRow, adjusted: boolean): number | null =>
     r.rating == null ? null : adjusted ? Math.round(usageAdjustedScore(r.rating, r.usagePct)) : r.rating;
 
+// Descending for everything except average finish (lower percentile = better).
+// Rows missing the sort value always go last.
 const COMPARE: Record<SortKey, (a: PokemonRow, b: PokemonRow, adjusted: boolean) => number> = {
     elo: (a, b, adjusted) => (eloOf(b, adjusted) ?? -Infinity) - (eloOf(a, adjusted) ?? -Infinity),
     usage: (a, b) => b.teams - a.teams,
@@ -67,27 +85,43 @@ export function PokemonTable({
         return [...filtered].sort((a, b) => COMPARE[sort](a, b, adjusted) || a.name.localeCompare(b.name));
     }, [rows, query, sort, adjusted]);
 
+    const { min, max } = useMemo(() => {
+        const vals = rows.map((r) => eloOf(r, adjusted)).filter((v): v is number => v != null);
+        return { min: Math.min(...vals), max: Math.max(...vals) };
+    }, [rows, adjusted]);
+
+    const header = (k: SortKey) =>
+        k === 'usage' ? 'Usage (teams)' : k === 'elo' && adjusted ? 'Adj. Elo' : SORT_LABELS[k];
+
     const cell = (r: PokemonRow, key: SortKey) => {
         switch (key) {
             case 'elo': {
                 const v = eloOf(r, adjusted);
-                if (v == null) return '—';
-                return adjusted ? `${v} (${r.rating})` : v;
+                if (v == null) return <span className="text-gray-400">—</span>;
+                return (
+                    <div>
+                        <EloBar value={v} min={min} max={max} />
+                        {adjusted && <div className="mt-0.5 text-[11px] text-gray-400">raw {r.rating}</div>}
+                    </div>
+                );
             }
             case 'usage':
-                return `${r.usagePct.toFixed(1)}% (${r.teams})`;
+                return <UsageBar pct={r.usagePct} teams={r.teams} />;
             case 'record':
-                return r.matches > 0 ? `${r.wins}-${r.losses}-${r.ties}` : '—';
+                return <WinBar wins={r.wins} losses={r.losses} ties={r.ties} />;
             case 'finish':
-                return r.avgPercentile != null ? `top ${(r.avgPercentile * 100).toFixed(0)}%` : '—';
+                return r.avgPercentile != null ? (
+                    <span className="tabular-nums text-gray-700">top {(r.avgPercentile * 100).toFixed(0)}%</span>
+                ) : (
+                    <span className="text-gray-400">—</span>
+                );
         }
     };
 
     return (
-        <div className="mt-3">
+        <div className="mt-4">
             <div className="flex flex-wrap items-center gap-3">
-                <input
-                    type="search"
+                <SearchInput
                     value={query}
                     onChange={(e) => {
                         setQuery(e.target.value);
@@ -95,68 +129,74 @@ export function PokemonTable({
                     }}
                     placeholder="Search Pokemon"
                     aria-label="Search Pokemon"
-                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
                 />
-                <label className="flex items-center gap-2 text-sm text-gray-500">
-                    Sort by
-                    <select
-                        value={sort}
-                        onChange={(e) => setSort(e.target.value as SortKey)}
-                        className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
-                    >
-                        {sortOptions.map((k) => (
-                            <option key={k} value={k}>
-                                {SORT_LABELS[k]}
-                            </option>
-                        ))}
-                    </select>
-                </label>
+                <SegmentedControl
+                    label="Sort by"
+                    value={sort}
+                    onChange={setSort}
+                    options={sortOptions.map((k) => ({ value: k, label: SORT_LABELS[k] }))}
+                />
                 <AdjustedToggle
                     checked={adjusted}
                     onChange={setAdjusted}
                     help="Shrinks each Pokemon's Elo toward 1500 based on how rarely it's played, since low-usage Pokemon get inflated ratings from a small, self-selected sample. Recommendations use this."
                 />
-                <span className="text-xs text-gray-400">{shown.length} Pokemon</span>
+                <span className="ml-auto text-xs text-gray-400">{shown.length} Pokemon</span>
             </div>
 
-            <table className="mt-3 w-full text-sm">
-                <thead>
-                    <tr className="border-b text-left text-gray-500">
-                        <th className="py-2 pr-4">#</th>
-                        <th className="py-2 pr-4">Pokemon</th>
-                        {columns.map((k) => (
-                            <th key={k} className="py-2 pr-4">
-                                {k === 'usage' ? 'Usage (teams)' : k === 'elo' && adjusted ? 'Adj. Elo (raw)' : SORT_LABELS[k]}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {shown.slice(0, visible).map((r, i) => (
-                        <tr key={r.speciesId} className="border-b last:border-0">
-                            <td className="py-2 pr-4 text-gray-500">{i + 1}</td>
-                            <td className="py-2 pr-4 font-medium text-gray-900">{r.name}</td>
+            <div className={`mt-3 ${TABLE_WRAP}`}>
+                <table className={TABLE}>
+                    <thead className={THEAD}>
+                        <tr>
+                            <th className={`${TH} w-14`}>#</th>
+                            <th className={TH}>Pokemon</th>
                             {columns.map((k) => (
-                                <td key={k} className="py-2 pr-4 text-gray-600">
-                                    {cell(r, k)}
-                                </td>
+                                <th key={k} className={TH}>
+                                    {header(k)}
+                                </th>
                             ))}
                         </tr>
-                    ))}
-                    {shown.length === 0 && (
-                        <tr>
-                            <td colSpan={columns.length + 2} className="py-4 text-gray-500">
-                                No Pokemon match &ldquo;{query}&rdquo;.
-                            </td>
-                        </tr>
-                    )}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {shown.slice(0, visible).map((r, i) => (
+                            <tr key={r.speciesId} className={TR}>
+                                <td className={TD}>
+                                    <RankBadge rank={i + 1} />
+                                </td>
+                                <td className={TD}>
+                                    <div className="flex items-center gap-3">
+                                        <Sprite speciesId={r.speciesId} />
+                                        <div>
+                                            <div className="font-semibold text-gray-900">{r.name}</div>
+                                            <div className="mt-0.5 flex gap-1">
+                                                <TypeBadge type={r.type1} />
+                                                <TypeBadge type={r.type2} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                {columns.map((k) => (
+                                    <td key={k} className={TD}>
+                                        {cell(r, k)}
+                                    </td>
+                                ))}
+                            </tr>
+                        ))}
+                        {shown.length === 0 && (
+                            <tr>
+                                <td colSpan={columns.length + 2} className="px-4 py-8 text-center text-gray-500">
+                                    No Pokemon match &ldquo;{query}&rdquo;.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
             {shown.length > visible && (
                 <button
                     type="button"
                     onClick={() => setVisible((v) => v + PAGE * 4)}
-                    className="mt-3 text-sm text-indigo-600 hover:underline"
+                    className="mt-3 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-indigo-600 hover:bg-gray-50"
                 >
                     Show more ({shown.length - visible} remaining)
                 </button>

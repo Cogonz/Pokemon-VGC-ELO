@@ -3,6 +3,10 @@ import { getPokemonUsage } from '@/lib/stats';
 import { getPlayerElo, getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
 import { MIN_ELO_MATCHES, MIN_POKEMON_ELO_MATCHES, games, sortPlayers } from '@/lib/leaderboards';
+import { getPlayerTitles } from '@/lib/titles';
+import { getSpeciesTypeMap } from '@/lib/species-types';
+import { Sprite } from '@/components/Sprite';
+import { Avatar, RankBadge, TABLE, TABLE_WRAP, TD, TH, THEAD, TR, TrophyBadge, TypeBadge, WinBar } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,10 +27,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
     const format = formatParam ?? current;
     const suffix = formatParam ? `?format=${encodeURIComponent(formatParam)}` : '';
 
-    const [usage, players, pokemonElo] = await Promise.all([
+    const [usage, players, pokemonElo, titles, types] = await Promise.all([
         getPokemonUsage(format),
         getPlayerElo(format),
         getPokemonElo(format),
+        getPlayerTitles(format),
+        getSpeciesTypeMap(),
     ]);
     const tournaments = options.find((o) => o.format === format)?.tournaments ?? 0;
     const rankedPlayers = sortPlayers(
@@ -37,7 +43,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
     const hasData = players.length > 0 || usage.length > 0;
 
     return (
-        <main className="mx-auto max-w-4xl px-6 py-10">
+        <main className="mx-auto max-w-5xl px-6 py-10">
             <section className="py-8">
                 <h1 className="text-4xl font-bold tracking-tight text-gray-900">Pokemon VGC ELO</h1>
                 <p className="mt-3 max-w-2xl text-lg text-gray-600">
@@ -88,28 +94,41 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                                     View all
                                 </Link>
                             </div>
-                            <table className="mt-3 w-full text-sm">
-                                <thead>
-                                    <tr className="border-b text-left text-gray-500">
-                                        <th className="py-2 pr-3">#</th>
-                                        <th className="py-2 pr-3">Player</th>
-                                        <th className="py-2 pr-3">Elo</th>
-                                        <th className="py-2">Record</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {rankedPlayers.slice(0, PREVIEW).map((p, i) => (
-                                        <tr key={p.player} className="border-b last:border-0">
-                                            <td className="py-2 pr-3 text-gray-500">{i + 1}</td>
-                                            <td className="py-2 pr-3 font-medium text-gray-900">{p.name}</td>
-                                            <td className="py-2 pr-3 text-gray-600">{p.rating}</td>
-                                            <td className="py-2 text-gray-600">
-                                                {p.wins}-{p.losses}-{p.ties}
-                                            </td>
+                            <div className={`mt-3 ${TABLE_WRAP}`}>
+                                <table className={TABLE}>
+                                    <thead className={THEAD}>
+                                        <tr>
+                                            <th className={`${TH} w-12`}>#</th>
+                                            <th className={TH}>Player</th>
+                                            <th className={TH}>Elo</th>
+                                            <th className={TH}>Wins</th>
+                                            <th className={TH}>Record</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {rankedPlayers.slice(0, PREVIEW).map((p, i) => (
+                                            <tr key={p.player} className={TR}>
+                                                <td className={TD}>
+                                                    <RankBadge rank={i + 1} />
+                                                </td>
+                                                <td className={TD}>
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar name={p.name} size={28} />
+                                                        <span className="font-semibold text-gray-900">{p.name}</span>
+                                                    </div>
+                                                </td>
+                                                <td className={`${TD} font-semibold tabular-nums text-gray-900`}>{p.rating}</td>
+                                                <td className={TD}>
+                                                    <TrophyBadge count={titles.get(p.player) ?? 0} />
+                                                </td>
+                                                <td className={TD}>
+                                                    <WinBar wins={p.wins} losses={p.losses} ties={p.ties} />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </section>
 
                         <section>
@@ -119,28 +138,43 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                                     View all
                                 </Link>
                             </div>
-                            <table className="mt-3 w-full text-sm">
-                                <thead>
-                                    <tr className="border-b text-left text-gray-500">
-                                        <th className="py-2 pr-3">#</th>
-                                        <th className="py-2 pr-3">Pokemon</th>
-                                        <th className="py-2 pr-3">Elo</th>
-                                        <th className="py-2">Record</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {rankedPokemon.slice(0, PREVIEW).map((p, i) => (
-                                        <tr key={p.speciesId} className="border-b last:border-0">
-                                            <td className="py-2 pr-3 text-gray-500">{i + 1}</td>
-                                            <td className="py-2 pr-3 font-medium text-gray-900">{p.name}</td>
-                                            <td className="py-2 pr-3 text-gray-600">{p.rating}</td>
-                                            <td className="py-2 text-gray-600">
-                                                {p.wins}-{p.losses}-{p.ties}
-                                            </td>
+                            <div className={`mt-3 ${TABLE_WRAP}`}>
+                                <table className={TABLE}>
+                                    <thead className={THEAD}>
+                                        <tr>
+                                            <th className={`${TH} w-12`}>#</th>
+                                            <th className={TH}>Pokemon</th>
+                                            <th className={TH}>Elo</th>
+                                            <th className={TH}>Record</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                                    </thead>
+                                    <tbody>
+                                        {rankedPokemon.slice(0, PREVIEW).map((p, i) => (
+                                            <tr key={p.speciesId} className={TR}>
+                                                <td className={TD}>
+                                                    <RankBadge rank={i + 1} />
+                                                </td>
+                                                <td className={TD}>
+                                                    <div className="flex items-center gap-2">
+                                                        <Sprite speciesId={p.speciesId} size={36} />
+                                                        <div>
+                                                            <div className="font-semibold text-gray-900">{p.name}</div>
+                                                            <div className="flex gap-1">
+                                                                <TypeBadge type={types[p.speciesId]?.type1} />
+                                                                <TypeBadge type={types[p.speciesId]?.type2} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className={`${TD} font-semibold tabular-nums text-gray-900`}>{p.rating}</td>
+                                                <td className={TD}>
+                                                    <WinBar wins={p.wins} losses={p.losses} ties={p.ties} />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
                         </section>
                     </div>
 

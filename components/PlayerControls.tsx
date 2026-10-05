@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AdjustedToggle } from '@/components/AdjustedToggle';
+import { SearchInput, SegmentedControl } from '@/components/ui';
 import { PLAYER_SORTS, type PlayerSort } from '@/lib/leaderboards';
 
-
 // The player list is too large (10k+ per regulation) to ship to the browser, so search and
-// sort live in the URL (?pq=, ?ps=) and the server filters before rendering.
+// sort live in the URL (?pq=, ?ps=, ?pa=) and the server filters before rendering.
 export function PlayerControls({ query, sort, adjusted }: { query: string; sort: PlayerSort; adjusted: boolean }) {
     const router = useRouter();
     const pathname = usePathname();
@@ -27,9 +27,8 @@ export function PlayerControls({ query, sort, adjusted }: { query: string; sort:
     }
 
     return (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-            <input
-                type="search"
+        <div className="flex flex-wrap items-center gap-3">
+            <SearchInput
                 value={text}
                 onChange={(e) => {
                     setText(e.target.value);
@@ -38,22 +37,16 @@ export function PlayerControls({ query, sort, adjusted }: { query: string; sort:
                 }}
                 placeholder="Search players"
                 aria-label="Search players"
-                className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
             />
-            <label className="flex items-center gap-2 text-sm text-gray-500">
-                Sort by
-                <select
-                    value={sort}
-                    onChange={(e) => update({ ps: e.target.value === 'elo' ? '' : e.target.value })}
-                    className="rounded border border-gray-300 bg-white px-2 py-1 text-sm text-gray-700"
-                >
-                    {Object.entries(PLAYER_SORTS).map(([k, label]) => (
-                        <option key={k} value={k}>
-                            {label}
-                        </option>
-                    ))}
-                </select>
-            </label>
+            <SegmentedControl
+                label="Sort by"
+                value={sort}
+                onChange={(v) => update({ ps: v === 'elo' ? '' : v })}
+                options={(Object.entries(PLAYER_SORTS) as [PlayerSort, string][]).map(([value, label]) => ({
+                    value,
+                    label,
+                }))}
+            />
             <AdjustedToggle
                 checked={adjusted}
                 onChange={(on) => update({ pa: on ? '1' : '' })}

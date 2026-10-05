@@ -1,6 +1,7 @@
 import { getPokemonUsage } from '@/lib/stats';
 import { getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
+import { getSpeciesTypeMap } from '@/lib/species-types';
 import { MIN_POKEMON_ELO_MATCHES, buildPokemonRows } from '@/lib/leaderboards';
 import { UsageChart } from '@/components/UsageChart';
 import { PokemonTable } from '@/components/PokemonTable';
@@ -12,13 +13,17 @@ export default async function PokemonPage({ searchParams }: { searchParams: Prom
     const { current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [usage, pokemonElo] = await Promise.all([getPokemonUsage(format), getPokemonElo(format)]);
-    const rows = buildPokemonRows(pokemonElo, usage);
+    const [usage, pokemonElo, types] = await Promise.all([
+        getPokemonUsage(format),
+        getPokemonElo(format),
+        getSpeciesTypeMap(),
+    ]);
+    const rows = buildPokemonRows(pokemonElo, usage, types);
     const leaderboard = rows.filter((p) => p.matches >= MIN_POKEMON_ELO_MATCHES);
 
     return (
-        <main className="mx-auto max-w-4xl px-6 py-10">
-            <h1 className="text-2xl font-bold text-gray-900">Pokemon</h1>
+        <main className="mx-auto max-w-5xl px-6 py-10">
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">Pokemon</h1>
             <p className="mt-1 text-sm text-gray-500">
                 Usage and Elo per Pokemon for regulation {format ?? 'unknown'}, computed from ingested Limitless
                 tournament data.

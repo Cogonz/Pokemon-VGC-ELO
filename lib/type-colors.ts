@@ -1,0 +1,21 @@
+// Standard Pokemon type colors (same in light and dark themes) with a readable text color on each.
+export const TYPE_COLORS: Record<string, { bg: string; fg: string }> = {
+    normal: { bg: '#A8A77A', fg: '#1f1f12' },
+    fire: { bg: '#EE8130', fg: '#2b1300' },
+    water: { bg: '#6390F0', fg: '#ffffff' },
+    electric: { bg: '#F7D02C', fg: '#3a2f00' },
+    grass: { bg: '#7AC74C', fg: '#12290a' },
+    ice: { bg: '#96D9D6', fg: '#0d2d2b' },
+    fighting: { bg: '#C22E28', fg: '#ffffff' },
+    poison: { bg: '#A33EA1', fg: '#ffffff' },
+    ground: { bg: '#E2BF65', fg: '#3a2c00' },
+    flying: { bg: '#A98FF3', fg: '#1d0f4d' },
+    psychic: { bg: '#F95587', fg: '#ffffff' },
+    bug: { bg: '#A6B91A', fg: '#222900' },
+    rock: { bg: '#B6A136', fg: '#2b2500' },
+    ghost: { bg: '#735797', fg: '#ffffff' },
+    dragon: { bg: '#6F35FC', fg: '#ffffff' },
+    dark: { bg: '#705746', fg: '#ffffff' },
+    steel: { bg: '#B7B7CE', fg: '#1e1e2b' },
+    fairy: { bg: '#D685AD', fg: '#3a0f26' },
+};
