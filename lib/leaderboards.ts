@@ -1,6 +1,7 @@
 import type { PlayerElo } from './elo';
 import type { PokemonElo } from './pokemon-elo';
 import type { PokemonUsage } from './stats';
+import { matchAdjustedScore } from './recommend';
 import type { PokemonRow } from '@/components/PokemonTable';
 
 export const MIN_ELO_MATCHES = 3; // players below this aren't ranked (but are still searchable)
@@ -16,14 +17,18 @@ export const normalize = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '
 
 // Record sort is shrunk toward 50% (as if each player had 5 extra wins and 5 extra losses),
 // so a 9-0 sample doesn't outrank a long strong record.
-const COMPARE: Record<PlayerSort, (a: PlayerElo, b: PlayerElo) => number> = {
-    elo: (a, b) => b.rating - a.rating,
+// With `adjusted`, "Elo" ordering uses the match-adjusted rating (lib/recommend.ts) instead of the raw one.
+export const playerElo = (p: PlayerElo, adjusted: boolean) =>
+    adjusted ? Math.round(matchAdjustedScore(p.rating, games(p))) : p.rating;
+
+const COMPARE: Record<PlayerSort, (a: PlayerElo, b: PlayerElo, adjusted: boolean) => number> = {
+    elo: (a, b, adjusted) => playerElo(b, adjusted) - playerElo(a, adjusted),
     matches: (a, b) => games(b) - games(a),
     record: (a, b) => (b.wins + 5) / (games(b) + 10) - (a.wins + 5) / (games(a) + 10) || games(b) - games(a),
 };
 
-export function sortPlayers(players: PlayerElo[], sort: PlayerSort): PlayerElo[] {
-    return [...players].sort((a, b) => COMPARE[sort](a, b) || a.name.localeCompare(b.name) || a.player.localeCompare(b.player));
+export function sortPlayers(players: PlayerElo[], sort: PlayerSort, adjusted = false): PlayerElo[] {
+    return [...players].sort((a, b) => COMPARE[sort](a, b, adjusted) || a.name.localeCompare(b.name) || a.player.localeCompare(b.player));
 }
 
 export function isPlayerSort(v: string | undefined): v is PlayerSort {

@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { AdjustedToggle } from '@/components/AdjustedToggle';
+import { usageAdjustedScore } from '@/lib/recommend';
 
 export interface PokemonRow {
     speciesId: string;
@@ -30,8 +32,12 @@ const winRate = (r: PokemonRow) => (r.wins + 10) / (r.matches + 20);
 
 // Descending for everything except average finish (lower percentile = better).
 // Rows missing the sort value always go last.
-const COMPARE: Record<SortKey, (a: PokemonRow, b: PokemonRow) => number> = {
-    elo: (a, b) => (b.rating ?? -Infinity) - (a.rating ?? -Infinity),
+// The displayed/sorted Elo: raw, or shrunk toward 1500 by how rarely the Pokemon is played.
+const eloOf = (r: PokemonRow, adjusted: boolean): number | null =>
+    r.rating == null ? null : adjusted ? Math.round(usageAdjustedScore(r.rating, r.usagePct)) : r.rating;
+
+const COMPARE: Record<SortKey, (a: PokemonRow, b: PokemonRow, adjusted: boolean) => number> = {
+    elo: (a, b, adjusted) => (eloOf(b, adjusted) ?? -Infinity) - (eloOf(a, adjusted) ?? -Infinity),
     usage: (a, b) => b.teams - a.teams,
     record: (a, b) => winRate(b) - winRate(a) || b.matches - a.matches,
     finish: (a, b) => (a.avgPercentile ?? Infinity) - (b.avgPercentile ?? Infinity),
@@ -53,17 +59,21 @@ export function PokemonTable({
     const [query, setQuery] = useState('');
     const [sort, setSort] = useState<SortKey>(defaultSort);
     const [visible, setVisible] = useState(PAGE);
+    const [adjusted, setAdjusted] = useState(false);
 
     const shown = useMemo(() => {
         const q = query.trim().toLowerCase();
         const filtered = q ? rows.filter((r) => r.name.toLowerCase().includes(q)) : rows;
-        return [...filtered].sort((a, b) => COMPARE[sort](a, b) || a.name.localeCompare(b.name));
-    }, [rows, query, sort]);
+        return [...filtered].sort((a, b) => COMPARE[sort](a, b, adjusted) || a.name.localeCompare(b.name));
+    }, [rows, query, sort, adjusted]);
 
     const cell = (r: PokemonRow, key: SortKey) => {
         switch (key) {
-            case 'elo':
-                return r.rating ?? '—';
+            case 'elo': {
+                const v = eloOf(r, adjusted);
+                if (v == null) return '—';
+                return adjusted ? `${v} (${r.rating})` : v;
+            }
             case 'usage':
                 return `${r.usagePct.toFixed(1)}% (${r.teams})`;
             case 'record':
@@ -101,6 +111,11 @@ export function PokemonTable({
                         ))}
                     </select>
                 </label>
+                <AdjustedToggle
+                    checked={adjusted}
+                    onChange={setAdjusted}
+                    help="Shrinks each Pokemon's Elo toward 1500 based on how rarely it's played, since low-usage Pokemon get inflated ratings from a small, self-selected sample. Recommendations use this."
+                />
                 <span className="text-xs text-gray-400">{shown.length} Pokemon</span>
             </div>
 
@@ -111,7 +126,7 @@ export function PokemonTable({
                         <th className="py-2 pr-4">Pokemon</th>
                         {columns.map((k) => (
                             <th key={k} className="py-2 pr-4">
-                                {k === 'usage' ? 'Usage (teams)' : SORT_LABELS[k]}
+                                {k === 'usage' ? 'Usage (teams)' : k === 'elo' && adjusted ? 'Adj. Elo (raw)' : SORT_LABELS[k]}
                             </th>
                         ))}
                     </tr>

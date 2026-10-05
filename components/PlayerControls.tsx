@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { AdjustedToggle } from '@/components/AdjustedToggle';
 import { PLAYER_SORTS, type PlayerSort } from '@/lib/leaderboards';
 
 
 // The player list is too large (10k+ per regulation) to ship to the browser, so search and
 // sort live in the URL (?pq=, ?ps=) and the server filters before rendering.
-export function PlayerControls({ query, sort }: { query: string; sort: PlayerSort }) {
+export function PlayerControls({ query, sort, adjusted }: { query: string; sort: PlayerSort; adjusted: boolean }) {
     const router = useRouter();
     const pathname = usePathname();
     const params = useSearchParams();
@@ -16,7 +17,7 @@ export function PlayerControls({ query, sort }: { query: string; sort: PlayerSor
 
     useEffect(() => () => clearTimeout(timer.current), []);
 
-    function update(next: { pq?: string; ps?: string }) {
+    function update(next: { pq?: string; ps?: string; pa?: string }) {
         const p = new URLSearchParams(params.toString());
         for (const [k, v] of Object.entries(next)) {
             if (v) p.set(k, v);
@@ -53,6 +54,11 @@ export function PlayerControls({ query, sort }: { query: string; sort: PlayerSor
                     ))}
                 </select>
             </label>
+            <AdjustedToggle
+                checked={adjusted}
+                onChange={(on) => update({ pa: on ? '1' : '' })}
+                help="Shrinks each rating toward 1500 based on how few matches back it, so a short hot streak doesn't outrank a proven record."
+            />
         </div>
     );
 }
