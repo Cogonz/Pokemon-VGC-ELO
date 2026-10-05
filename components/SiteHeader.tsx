@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { FormatOption } from '@/lib/formats';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 const LINKS = [
     { href: '/', label: 'Home' },
@@ -63,6 +64,7 @@ export function SiteHeader({
                         </select>
                     </label>
                 )}
+                <ThemeToggle />
                 {children}
             </div>
         </header>

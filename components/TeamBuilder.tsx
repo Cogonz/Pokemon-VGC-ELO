@@ -9,6 +9,8 @@ interface PokemonOption {
     name: string;
     rating: number;
     matches: number;
+    usagePct: number;
+    score: number; // usage-adjusted Elo, used only to order recommendations (lib/recommend.ts)
     type1: string | null;
     type2: string | null;
 }
@@ -51,12 +53,12 @@ export function TeamBuilder({
 
     const filledCount = slots.filter(Boolean).length;
     const pickedIds = new Set(slots.filter((s): s is SlotPokemon => s !== null).map((s) => s.speciesId));
-    // pokemonOptions arrives sorted by Elo descending (see app/teambuilder/page.tsx),
-    // so the first N left after excluding what's already picked are the strongest,
-    // best-tested Pokemon not yet on the team -- a real recommendation, not just a
-    // re-display of the full list.
+    // pokemonOptions arrives sorted by raw Elo (the picker list). Recommendations instead rank by a
+    // usage-adjusted score: low-usage Pokemon look artificially strong on Elo alone, so their edge
+    // is shrunk toward the baseline (see lib/recommend.ts).
     const unpicked = pokemonOptions.filter((p) => !pickedIds.has(p.speciesId));
-    const suggestions = unpicked.slice(0, 5);
+    const recommended = [...unpicked].sort((a, b) => b.score - a.score);
+    const suggestions = recommended.slice(0, 5);
     const filteredOptions = unpicked.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()));
 
     const currentTeam = slots.filter((s): s is SlotPokemon => s !== null);
@@ -193,7 +195,7 @@ export function TeamBuilder({
 
                 {suggestions.length > 0 && filledCount < TEAM_SIZE && (
                     <div className="mt-2 rounded border border-indigo-100 bg-indigo-50 p-3">
-                        <p className="text-xs font-medium text-indigo-700">Recommended (strong, not on your team)</p>
+                        <p className="text-xs font-medium text-indigo-700">Recommended (strong and proven: Elo adjusted for usage)</p>
                         <div className="mt-2 flex flex-wrap gap-2">
                             {suggestions.map((p) => (
                                 <button
@@ -202,7 +204,7 @@ export function TeamBuilder({
                                     onClick={() => addPokemon(p)}
                                     className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
                                 >
-                                    {p.name} &middot; {p.rating}
+                                    {p.name} &middot; {p.rating} &middot; {p.usagePct.toFixed(1)}%
                                 </button>
                             ))}
                         </div>
@@ -227,7 +229,7 @@ export function TeamBuilder({
                             >
                                 <span className="font-medium text-gray-900">{p.name}</span>
                                 <span className="text-gray-500">
-                                    {p.rating} Elo &middot; {p.matches} matches
+                                    {p.rating} Elo &middot; {p.usagePct.toFixed(1)}% usage &middot; {p.matches} matches
                                 </span>
                             </button>
                         </li>
@@ -241,7 +243,7 @@ export function TeamBuilder({
                 {weaknesses.length > 0 && (
                     <div className="mt-2 space-y-2">
                         {weaknesses.map((w) => {
-                            const counters = unpicked
+                            const counters = recommended
                                 .filter((p) => p.type1 && effectiveness([p.type1, p.type2], w.type) < 1)
                                 .slice(0, COUNTERS_PER_WEAKNESS);
                             const severe = !w.hasAnswer;
@@ -263,7 +265,7 @@ export function TeamBuilder({
                                                     onClick={() => addPokemon(p)}
                                                     className={`rounded-full border bg-white px-3 py-1 text-xs font-medium ${severe ? 'border-red-200 text-red-700 hover:bg-red-100' : 'border-amber-200 text-amber-700 hover:bg-amber-100'}`}
                                                 >
-                                                    {p.name} &middot; {p.rating}
+                                                    {p.name} &middot; {p.rating} &middot; {p.usagePct.toFixed(1)}%
                                                 </button>
                                             ))}
                                         </div>
@@ -352,7 +354,7 @@ export function TeamBuilder({
                                 type="button"
                                 onClick={handleSave}
                                 disabled={saving}
-                                className="mt-2 rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+                                className="mt-2 rounded bg-indigo-600 px-4 py-1.5 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
                             >
                                 {saving ? 'Saving...' : 'Save team'}
                             </button>

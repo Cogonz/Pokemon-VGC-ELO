@@ -47,13 +47,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                 <div className="mt-6 flex flex-wrap gap-3">
                     <Link
                         href={`/players${suffix}`}
-                        className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                        className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:brightness-110"
                     >
                         Player rankings
                     </Link>
                     <Link
                         href={`/pokemon${suffix}`}
-                        className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+                        className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:brightness-110"
                     >
                         Pokemon rankings
                     </Link>

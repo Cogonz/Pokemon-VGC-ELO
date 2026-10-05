@@ -1,4 +1,6 @@
 import { getPokemonElo } from '@/lib/ratings-store';
+import { getPokemonUsage } from '@/lib/stats';
+import { usageAdjustedScore } from '@/lib/recommend';
 import { getUserId, isAuthConfigured } from '@/lib/session';
 import { listSavedTeams, type SavedTeam } from '@/lib/teams';
 import { getAvailableFormats } from '@/lib/formats';
@@ -14,8 +16,9 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
     const { current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [pokemonElo, speciesTypes, userId] = await Promise.all([
+    const [pokemonElo, usage, speciesTypes, userId] = await Promise.all([
         getPokemonElo(format),
+        getPokemonUsage(format),
         getSpeciesTypeMap(),
         getUserId(),
     ]);
@@ -29,6 +32,8 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
         }
     }
 
+    const usageBySpecies = new Map(usage.map((u) => [u.speciesId, u.usagePct]));
+
     const pokemonOptions = pokemonElo
         .filter((p) => p.matches >= MIN_PICKER_MATCHES)
         .sort((a, b) => b.rating - a.rating)
@@ -37,6 +42,8 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
             name: p.name,
             rating: p.rating,
             matches: p.matches,
+            usagePct: usageBySpecies.get(p.speciesId) ?? 0,
+            score: usageAdjustedScore(p.rating, usageBySpecies.get(p.speciesId) ?? 0),
             type1: speciesTypes[p.speciesId]?.type1 ?? null,
             type2: speciesTypes[p.speciesId]?.type2 ?? null,
         }));
@@ -47,7 +54,7 @@ export default async function TeamBuilderPage({ searchParams }: { searchParams: 
                 <div>
                     <h1 className="text-2xl font-bold text-gray-900">Team Builder</h1>
                     <p className="mt-1 text-sm text-gray-500">
-                        Pick Pokemon sorted by Elo for regulation {format ?? 'unknown'}.
+                        Pick Pokemon sorted by Elo for regulation {format ?? 'unknown'}. Recommendations weigh Elo by usage, so rarely-played Pokemon with a few strong results don&apos;t outrank proven ones.
                     </p>
                 </div>
             </div>

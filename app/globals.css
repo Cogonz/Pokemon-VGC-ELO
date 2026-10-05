@@ -1,1 +1,62 @@
 @import "tailwindcss";
+
+/* Class-based dark mode (toggled by components/ThemeToggle.tsx, set pre-paint by the script in layout.tsx). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 defaults borders to currentColor; keep them subtle in both themes. */
+*,
+::after,
+::before,
+::backdrop,
+::file-selector-button {
+    border-color: var(--color-gray-200);
+}
+
+body {
+    background-color: var(--color-white);
+    color: var(--color-gray-900);
+}
+
+/*
+ * Dark theme: the app styles itself with Tailwind's gray/indigo/red/amber palette, so instead of
+ * a `dark:` variant on every class we remap those palette variables here. Grays are inverted
+ * (900 = near-white text, 200 = subtle border), `white` becomes the card/input surface, and the
+ * tinted callouts become dark tints. Text colors keep >= 4.5:1 against their backgrounds.
+ */
+.dark {
+    color-scheme: dark;
+
+    --color-white: #0f1521;
+    --color-gray-50: #151c2b;
+    --color-gray-100: #1c2536;
+    --color-gray-200: #2a3447;
+    --color-gray-300: #3d4a62;
+    --color-gray-400: #7d8aa3;
+    --color-gray-500: #9aa6bb;
+    --color-gray-600: #b0bacb;
+    --color-gray-700: #c8d0de;
+    --color-gray-800: #e0e5ee;
+    --color-gray-900: #f1f4f9;
+
+    --color-indigo-50: #1a1f3f;
+    --color-indigo-100: #232a57;
+    --color-indigo-200: #38429a;
+    --color-indigo-600: #6366f1; /* buttons (white text) and links on dark */
+    --color-indigo-700: #a5b4fc;
+    --color-indigo-800: #c7d2fe;
+
+    --color-red-50: #2b1317;
+    --color-red-100: #3c1a1f;
+    --color-red-200: #7f2430;
+    --color-red-600: #f87171;
+    --color-red-700: #fca5a5;
+
+    --color-amber-50: #2a1e0b;
+    --color-amber-100: #3b2a0f;
+    --color-amber-200: #7a5719;
+    --color-amber-700: #fcd34d;
+}
+
+.dark body {
+    background-color: #0a0e17;
+}
