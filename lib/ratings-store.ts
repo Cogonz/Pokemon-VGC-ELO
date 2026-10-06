@@ -2,6 +2,7 @@ import { prisma } from './prisma';
 import { getAvailableFormats } from './formats';
 import { computePlayerElo, type PlayerElo } from './elo';
 import { computePokemonElo, type PokemonElo } from './pokemon-elo';
+import { computePlayerBonuses, computePokemonBonuses } from './results';
 
 // The joint Pokemon regression and the player Elo replay both scan every
 // match for a regulation, which is too much work (and too many rows pulled
@@ -22,10 +23,11 @@ function chunk<T>(rows: T[]): T[][] {
 export async function refreshRatings(): Promise<void> {
     const { options } = await getAvailableFormats();
 
-    const pokemonRows: { format: string; species_id: string; name: string; rating: number; wins: number; losses: number; ties: number; matches: number }[] = [];
-    const playerRows: { format: string; player: string; name: string; rating: number; wins: number; losses: number; ties: number }[] = [];
+    const pokemonRows: { format: string; species_id: string; name: string; rating: number; wins: number; losses: number; ties: number; matches: number; result_bonus: number }[] = [];
+    const playerRows: { format: string; player: string; name: string; rating: number; wins: number; losses: number; ties: number; result_bonus: number }[] = [];
 
     for (const { format } of options) {
+        const [pokemonBonus, playerBonus] = await Promise.all([computePokemonBonuses(format), computePlayerBonuses(format)]);
         for (const p of await computePokemonElo(format)) {
             pokemonRows.push({
                 format,
@@ -36,10 +38,11 @@ export async function refreshRatings(): Promise<void> {
                 losses: p.losses,
                 ties: p.ties,
                 matches: p.matches,
+                result_bonus: pokemonBonus.get(p.speciesId) ?? 0,
             });
         }
         for (const p of await computePlayerElo(format)) {
-            playerRows.push({ format, player: p.player, name: p.name, rating: p.rating, wins: p.wins, losses: p.losses, ties: p.ties });
+            playerRows.push({ format, player: p.player, name: p.name, rating: p.rating, wins: p.wins, losses: p.losses, ties: p.ties, result_bonus: playerBonus.get(p.player) ?? 0 });
         }
     }
 
@@ -53,22 +56,43 @@ export async function refreshRatings(): Promise<void> {
     console.log(`[ratings] stored ${pokemonRows.length} pokemon ratings and ${playerRows.length} player ratings across ${options.length} format(s)`);
 }
 
-export async function getPokemonElo(format: string | null): Promise<PokemonElo[]> {
+// Stored ratings split into match Elo and the tournament-results bonus. `rating` is the combined
+// value the site shows by default; `matchRating` is match Elo alone (for the "include tournament
+// results" toggle).
+export type PokemonRating = PokemonElo & { matchRating: number; resultBonus: number };
+export type PlayerRating = PlayerElo & { matchRating: number; resultBonus: number };
+
+export async function getPokemonElo(format: string | null): Promise<PokemonRating[]> {
     if (format === null) return [];
-    const rows = await prisma.pokemon_elo.findMany({ where: { format }, orderBy: [{ rating: 'desc' }, { species_id: 'asc' }] });
-    return rows.map((r) => ({
-        speciesId: r.species_id,
-        name: r.name,
-        rating: r.rating,
-        wins: r.wins,
-        losses: r.losses,
-        ties: r.ties,
-        matches: r.matches,
-    }));
+    const rows = await prisma.pokemon_elo.findMany({ where: { format } });
+    return rows
+        .map((r) => ({
+            speciesId: r.species_id,
+            name: r.name,
+            rating: r.rating + r.result_bonus,
+            matchRating: r.rating,
+            resultBonus: r.result_bonus,
+            wins: r.wins,
+            losses: r.losses,
+            ties: r.ties,
+            matches: r.matches,
+        }))
+        .sort((a, b) => b.rating - a.rating || a.speciesId.localeCompare(b.speciesId));
 }
 
-export async function getPlayerElo(format: string | null): Promise<PlayerElo[]> {
+export async function getPlayerElo(format: string | null): Promise<PlayerRating[]> {
     if (format === null) return [];
-    const rows = await prisma.player_elo.findMany({ where: { format }, orderBy: [{ rating: 'desc' }, { player: 'asc' }] });
-    return rows.map((r) => ({ player: r.player, name: r.name, rating: r.rating, wins: r.wins, losses: r.losses, ties: r.ties }));
+    const rows = await prisma.player_elo.findMany({ where: { format } });
+    return rows
+        .map((r) => ({
+            player: r.player,
+            name: r.name,
+            rating: r.rating + r.result_bonus,
+            matchRating: r.rating,
+            resultBonus: r.result_bonus,
+            wins: r.wins,
+            losses: r.losses,
+            ties: r.ties,
+        }))
+        .sort((a, b) => b.rating - a.rating || a.player.localeCompare(b.player));
 }

@@ -38,10 +38,11 @@ const PODIUM_STYLES = [
 export default async function PlayersPage({
     searchParams,
 }: {
-    searchParams: Promise<{ format?: string; pq?: string; ps?: string; pa?: string }>;
+    searchParams: Promise<{ format?: string; pq?: string; ps?: string; pa?: string; pt?: string }>;
 }) {
-    const { format: formatParam, pq = '', ps, pa } = await searchParams;
+    const { format: formatParam, pq = '', ps, pa, pt } = await searchParams;
     const adjusted = pa === '1';
+    const results = pt !== '0';
     const { current } = await getAvailableFormats();
     const format = formatParam ?? current;
     const sort = isPlayerSort(ps) ? ps : 'elo';
@@ -52,7 +53,8 @@ export default async function PlayersPage({
         players.filter((p) => games(p) >= MIN_ELO_MATCHES),
         sort,
         adjusted,
-        titles
+        titles,
+        results
     );
     // Rank within the full ranked list for the chosen sort, so a searched player keeps their
     // real position instead of being renumbered 1..n.
@@ -60,12 +62,12 @@ export default async function PlayersPage({
 
     // Search looks at every player, including those under the ranking threshold.
     const pool = query
-        ? sortPlayers(players.filter((p) => normalize(p.name).includes(query)), sort, adjusted, titles)
+        ? sortPlayers(players.filter((p) => normalize(p.name).includes(query)), sort, adjusted, titles, results)
         : ranked;
     const rows = pool.slice(0, PAGE_SIZE);
     const podium = query ? [] : ranked.slice(0, 3);
 
-    const ratings = ranked.map((p) => playerElo(p, adjusted));
+    const ratings = ranked.map((p) => playerElo(p, adjusted, results));
     const min = ratings.length ? Math.min(...ratings) : 0;
     const max = ratings.length ? Math.max(...ratings) : 0;
     const totalTitles = [...titles.values()].reduce((a, b) => a + b, 0);
@@ -102,7 +104,7 @@ export default async function PlayersPage({
                                     <div className="mt-4 flex items-end justify-between gap-4">
                                         <div>
                                             <div className="text-3xl font-extrabold tabular-nums text-gray-900">
-                                                {playerElo(p, adjusted)}
+                                                {playerElo(p, adjusted, results)}
                                             </div>
                                             <div className="text-[11px] uppercase tracking-wide text-gray-500">
                                                 {adjusted ? 'Adj. Elo' : 'Elo'}
@@ -117,7 +119,7 @@ export default async function PlayersPage({
 
                     <div className="mt-8">
                         {/* key resets the search box when the regulation changes */}
-                        <PlayerControls key={format ?? 'none'} query={pq} sort={sort} adjusted={adjusted} />
+                        <PlayerControls key={format ?? 'none'} query={pq} sort={sort} adjusted={adjusted} results={results} />
                     </div>
 
                     <div className={`mt-3 ${TABLE_WRAP}`}>
@@ -145,8 +147,11 @@ export default async function PlayersPage({
                                             </div>
                                         </td>
                                         <td className={TD}>
-                                            <EloBar value={playerElo(p, adjusted)} min={min} max={max} />
-                                            {adjusted && <div className="mt-0.5 text-[11px] text-gray-400">raw {p.rating}</div>}
+                                            <EloBar value={playerElo(p, adjusted, results)} min={min} max={max} />
+                                            <div className="mt-0.5 text-[11px] text-gray-400">
+                                                {adjusted ? `raw ${results ? p.rating : p.matchRating} · ` : ''}
+                                                {results && p.resultBonus > 0 ? `incl. +${p.resultBonus} results` : ''}
+                                            </div>
                                         </td>
                                         <td className={TD}>
                                             <TrophyBadge count={titles.get(p.player) ?? 0} />

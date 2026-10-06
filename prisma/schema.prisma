@@ -85,6 +85,8 @@ model pokemon_elo {
   losses     Int
   ties       Int
   matches    Int
+  // Positive-only Elo bonus from tournament results (lib/results.ts); `rating` is match Elo alone.
+  result_bonus Int @default(0)
 
   @@id([format, species_id])
 }
@@ -97,6 +99,9 @@ model player_elo {
   wins   Int
   losses Int
   ties   Int
+
+  // Positive-only Elo bonus from tournament results (lib/results.ts); `rating` is match Elo alone.
+  result_bonus Int @default(0)
 
   @@id([format, player])
 }

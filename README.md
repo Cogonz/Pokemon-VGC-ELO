@@ -26,6 +26,22 @@ The Limitless API only exposes each player's full registered decklist per tourna
 which specific 4 of 6 were brought to an individual game — so every match a player plays
 uses their whole registered roster as the "general" team for attribution purposes.
 
+## Tournament results bonus
+
+Match Elo (above) is stored as `rating`; `result_bonus` is added on top for display. It is positive-only
+(poor finishes never subtract, since those games already moved Elo) and computed in
+[`lib/results.ts`](lib/results.ts) during ingestion:
+
+- **Placement score:** winner 1.0, finalist 0.6, top 4 0.4, top 8 0.25, top 16 0.1, times a field-size
+  weight (30 players ~0.68, 64 = 1.0, 128+ ~1.4-1.5).
+- **Players:** `60 * (1 - exp(-points / 3))`, so the bonus saturates (first wins matter most; max +60).
+- **Pokemon:** a team's points go to each of its six Pokemon. The bonus compares a Pokemon's average points
+  per team with the average across all teams, shrunk toward the average for rarely-seen Pokemon (max +25), so a
+  common Pokemon isn't rewarded just for appearing on many teams.
+
+The Players and Pokemon tables have a "Tournament results" toggle to show match Elo alone. Existing databases
+need `db/migrations/002_result_bonus.sql` (additive) before deploying.
+
 ## Tech stack
 
 - **TypeScript** end to end

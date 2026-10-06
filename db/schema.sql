@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS pokemon_elo (
     losses     INTEGER NOT NULL,
     ties       INTEGER NOT NULL,
     matches    INTEGER NOT NULL,
+    result_bonus INTEGER NOT NULL DEFAULT 0, -- tournament-results bonus (lib/results.ts); rating is match Elo alone
     PRIMARY KEY (format, species_id)
 );
 
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS player_elo (
     wins   INTEGER NOT NULL,
     losses INTEGER NOT NULL,
     ties   INTEGER NOT NULL,
+    result_bonus INTEGER NOT NULL DEFAULT 0, -- tournament-results bonus (lib/results.ts); rating is match Elo alone
     PRIMARY KEY (format, player)
 );
 

@@ -194,7 +194,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                         <p className="mt-2">
                             <strong>Player Elo</strong> replays every match chronologically, so ratings carry across
                             tournaments. <strong>Pokemon Elo</strong> credits each Pokemon for team results with a
-                            regularized regression over the whole match history, shrinking thin samples toward 1500.
+                            regularized regression over the whole match history, shrinking thin samples toward 1500. Both
+                            then add a capped, positive-only bonus for tournament results: top finishes at large
+                            events (weighted by field size), and for Pokemon, how much better their teams finish than
+                            the average team. Every table can show match Elo alone.
                             Data comes from{' '}
                             <a className="text-indigo-600 hover:underline" href="https://limitlesstcg.com">
                                 Limitless TCG
