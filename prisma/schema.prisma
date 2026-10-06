@@ -164,3 +164,14 @@ model saved_teams {
 
   @@index([user_id], map: "saved_teams_user_idx")
 }
+
+// Impact (Elo points, vs the Pokemon's usual items) of a held item; see lib/item-impact.ts.
+model item_impact {
+  format     String
+  species_id String
+  item       String
+  teams      Int
+  impact     Int
+
+  @@id([format, species_id, item])
+}

@@ -124,7 +124,11 @@ export default async function PokemonDetailPage({
             </p>
             <div className="mt-3 grid gap-4 md:grid-cols-2">
                 <BarList title="Moves" entries={detail.moves} />
-                <BarList title="Items" entries={detail.items} />
+                <BarList
+                    title="Items"
+                    entries={detail.items}
+                    hint="Badge = Elo impact vs this Pokemon's usual items, adjusted for player skill. Grey = too few teams to trust."
+                />
                 <BarList title="Abilities" entries={detail.abilities} />
                 <BarList title="Natures" entries={detail.natures} />
                 {hasTera && <BarList title="Tera types" entries={detail.teras} />}

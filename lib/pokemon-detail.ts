@@ -29,6 +29,7 @@ export interface UsageEntry {
     label: string;
     teams: number;
     pct: number; // of teams carrying this Pokemon
+    impact?: number | null; // Elo points vs this Pokemon's usual items (items only; lib/item-impact.ts)
 }
 
 export interface TournamentResult {
@@ -78,7 +79,7 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
             format
         );
 
-    const [items, abilities, natures, teras, moves, teammates, results] = await Promise.all([
+    const [items, abilities, natures, teras, moves, teammates, results, impacts] = await Promise.all([
         column('item'),
         column('ability'),
         column('nature'),
@@ -104,12 +105,16 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
             WHERE tp.species_id = ${speciesId} AND t.format = ${format} AND s.placement BETWEEN 1 AND 4
             ORDER BY s.placement ASC, t.players DESC NULLS LAST, t.date DESC NULLS LAST
             LIMIT 15`,
+        prisma.item_impact.findMany({ where: { format, species_id: speciesId } }),
     ]);
+    const impactByItem = new Map(impacts.map((r) => [r.item, r.impact]));
 
     return {
         teams,
         moves: toEntries(moves, teams),
-        items: toEntries(items, teams).slice(0, 12),
+        items: toEntries(items, teams)
+            .slice(0, 12)
+            .map((e) => ({ ...e, impact: impactByItem.get(e.label) ?? null })),
         abilities: toEntries(abilities, teams).slice(0, 6),
         natures: toEntries(natures, teams).slice(0, 6),
         teras: toEntries(teras, teams).slice(0, 8),

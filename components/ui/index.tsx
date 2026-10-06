@@ -177,7 +177,30 @@ export function SearchInput(props: React.InputHTMLAttributes<HTMLInputElement>) 
 }
 
 // A ranked list of labels with a share-of-teams bar, used for moves/items/abilities/teammates.
-export function BarList({ title, entries, hint }: { title: string; entries: { label: string; teams: number; pct: number }[]; hint?: string }) {
+const LOW_SAMPLE_TEAMS = 50; // impact estimates under this many teams are mostly noise
+
+function ImpactBadge({ impact, teams }: { impact: number; teams: number }) {
+    const low = teams < LOW_SAMPLE_TEAMS;
+    const tone = low ? 'bg-gray-100 text-gray-400' : impact >= 10 ? 'bg-emerald-100 text-emerald-700' : impact <= -10 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500';
+    return (
+        <span
+            className={`ml-2 rounded px-1.5 py-px text-[11px] font-semibold tabular-nums ${tone}`}
+            title={low ? `Only ${teams} teams: too few to trust this estimate` : `${impact >= 0 ? '+' : ''}${impact} Elo vs this Pokemon's usual items`}
+        >
+            {impact > 0 ? `+${impact}` : impact < 0 ? `−${Math.abs(impact)}` : '±0'}
+        </span>
+    );
+}
+
+export function BarList({
+    title,
+    entries,
+    hint,
+}: {
+    title: string;
+    entries: { label: string; teams: number; pct: number; impact?: number | null }[];
+    hint?: string;
+}) {
     if (entries.length === 0) return null;
     return (
         <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -187,7 +210,10 @@ export function BarList({ title, entries, hint }: { title: string; entries: { la
                 {entries.map((e) => (
                     <li key={e.label}>
                         <div className="flex items-baseline justify-between gap-3 text-sm">
-                            <span className="truncate text-gray-800">{e.label}</span>
+                            <span className="truncate text-gray-800">
+                                {e.label}
+                                {e.impact != null && <ImpactBadge impact={e.impact} teams={e.teams} />}
+                            </span>
                             <span className="shrink-0 tabular-nums text-gray-500">
                                 {e.pct.toFixed(e.pct >= 10 ? 0 : 1)}%{' '}
                                 <span className="text-xs text-gray-400">({e.teams.toLocaleString()})</span>

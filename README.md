@@ -42,6 +42,15 @@ Match Elo (above) is stored as `rating`; `result_bonus` is added on top for disp
 The Players and Pokemon tables have a "Tournament results" toggle to show match Elo alone. Existing databases
 need `db/migrations/002_result_bonus.sql` (additive) before deploying.
 
+## Item impact
+
+Each Pokemon's detail page shows how much a held item changes results, in Elo points versus that Pokemon's
+usual items ([`lib/item-impact.ts`](lib/item-impact.ts), stored in `item_impact`). It is one joint regularized
+logistic regression per regulation with features for the Pokemon, the specific Pokemon+item pair, and the player
+(so strong players' item habits aren't mistaken for item effects). Items on fewer than 50 teams are greyed out as
+too noisy. It is an estimate: with few events per player, skill can still leak into item effects, so read large
+swings on small samples skeptically. Existing databases need `db/migrations/003_item_impact.sql`.
+
 ## Tech stack
 
 - **TypeScript** end to end
