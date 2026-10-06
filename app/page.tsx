@@ -158,7 +158,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ f
                                                     <div className="flex items-center gap-2">
                                                         <Sprite speciesId={p.speciesId} size={36} />
                                                         <div>
-                                                            <div className="font-semibold text-gray-900">{p.name}</div>
+                                                            <Link
+                                                                href={`/pokemon/${encodeURIComponent(p.speciesId)}${suffix}`}
+                                                                className="font-semibold text-gray-900 hover:text-indigo-600 hover:underline"
+                                                            >
+                                                                {p.name}
+                                                            </Link>
                                                             <div className="flex gap-1">
                                                                 <TypeBadge type={types[p.speciesId]?.type1} />
                                                                 <TypeBadge type={types[p.speciesId]?.type2} />

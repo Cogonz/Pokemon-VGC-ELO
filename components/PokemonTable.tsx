@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { AdjustedToggle } from '@/components/AdjustedToggle';
 import { Sprite } from '@/components/Sprite';
@@ -14,6 +15,7 @@ import {
     TH,
     THEAD,
     TR,
+    TrophyBadge,
     TypeBadge,
     UsageBar,
     WinBar,
@@ -33,17 +35,20 @@ export interface PokemonRow {
     teams: number;
     usagePct: number;
     avgPercentile: number | null;
+    titles: number; // tournaments won by a team carrying it
+    topCuts: number; // top-8 finishes by teams carrying it (includes wins)
     type1: string | null;
     type2: string | null;
 }
 
-type SortKey = 'elo' | 'usage' | 'record' | 'finish';
+type SortKey = 'elo' | 'usage' | 'record' | 'finish' | 'titles';
 
 const SORT_LABELS: Record<SortKey, string> = {
     elo: 'Elo',
     usage: 'Total usage',
     record: 'W-L record',
     finish: 'Avg finish',
+    titles: 'Tournament wins',
 };
 
 // Win rate shrunk toward 50% (as if every Pokemon had 20 extra even games), so a 13-3 sample
@@ -64,6 +69,8 @@ const COMPARE: Record<SortKey, (a: PokemonRow, b: PokemonRow, adjusted: boolean,
     usage: (a, b) => b.teams - a.teams,
     record: (a, b) => winRate(b) - winRate(a) || b.matches - a.matches,
     finish: (a, b) => (a.avgPercentile ?? Infinity) - (b.avgPercentile ?? Infinity),
+    // Wins first, then top-8 finishes as the tiebreak (tournament history).
+    titles: (a, b) => b.titles - a.titles || b.topCuts - a.topCuts,
 };
 
 const PAGE = 25;
@@ -73,7 +80,9 @@ export function PokemonTable({
     sortOptions,
     defaultSort,
     columns,
+    format,
 }: {
+    format: string | null;
     rows: PokemonRow[];
     sortOptions: SortKey[];
     defaultSort: SortKey;
@@ -118,6 +127,13 @@ export function PokemonTable({
                 return <UsageBar pct={r.usagePct} teams={r.teams} />;
             case 'record':
                 return <WinBar wins={r.wins} losses={r.losses} ties={r.ties} />;
+            case 'titles':
+                return (
+                    <div className="flex items-center gap-2">
+                        <TrophyBadge count={r.titles} />
+                        <span className="text-xs text-gray-500">{r.topCuts > 0 ? `${r.topCuts} top 8` : ''}</span>
+                    </div>
+                );
             case 'finish':
                 return r.avgPercentile != null ? (
                     <span className="tabular-nums text-gray-700">top {(r.avgPercentile * 100).toFixed(0)}%</span>
@@ -182,7 +198,12 @@ export function PokemonTable({
                                     <div className="flex items-center gap-3">
                                         <Sprite speciesId={r.speciesId} />
                                         <div>
-                                            <div className="font-semibold text-gray-900">{r.name}</div>
+                                            <Link
+                                                href={`/pokemon/${encodeURIComponent(r.speciesId)}${format ? `?format=${encodeURIComponent(format)}` : ''}`}
+                                                className="font-semibold text-gray-900 hover:text-indigo-600 hover:underline"
+                                            >
+                                                {r.name}
+                                            </Link>
                                             <div className="mt-0.5 flex gap-1">
                                                 <TypeBadge type={r.type1} />
                                                 <TypeBadge type={r.type2} />

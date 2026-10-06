@@ -175,3 +175,30 @@ export function SearchInput(props: React.InputHTMLAttributes<HTMLInputElement>) 
         </div>
     );
 }
+
+// A ranked list of labels with a share-of-teams bar, used for moves/items/abilities/teammates.
+export function BarList({ title, entries, hint }: { title: string; entries: { label: string; teams: number; pct: number }[]; hint?: string }) {
+    if (entries.length === 0) return null;
+    return (
+        <section className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
+            {hint && <p className="mt-0.5 text-xs text-gray-400">{hint}</p>}
+            <ul className="mt-3 space-y-2.5">
+                {entries.map((e) => (
+                    <li key={e.label}>
+                        <div className="flex items-baseline justify-between gap-3 text-sm">
+                            <span className="truncate text-gray-800">{e.label}</span>
+                            <span className="shrink-0 tabular-nums text-gray-500">
+                                {e.pct.toFixed(e.pct >= 10 ? 0 : 1)}%{' '}
+                                <span className="text-xs text-gray-400">({e.teams.toLocaleString()})</span>
+                            </span>
+                        </div>
+                        <div className="mt-1 h-1.5 w-full rounded-full bg-gray-100">
+                            <div className="h-1.5 rounded-full bg-indigo-500" style={{ width: `${Math.min(100, e.pct)}%` }} />
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        </section>
+    );
+}

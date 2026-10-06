@@ -63,7 +63,8 @@ export function isPlayerSort(v: string | undefined): v is PlayerSort {
 export function buildPokemonRows(
     elo: PokemonElo[],
     usage: PokemonUsage[],
-    types: Record<string, { type1: string; type2: string | null }> = {}
+    types: Record<string, { type1: string; type2: string | null }> = {},
+    history: Map<string, { titles: number; topCuts: number }> = new Map()
 ): PokemonRow[] {
     const eloById = new Map(elo.map((p) => [p.speciesId, p]));
     const usageById = new Map(usage.map((u) => [u.speciesId, u]));
@@ -83,6 +84,8 @@ export function buildPokemonRows(
             teams: u?.teams ?? 0,
             usagePct: u?.usagePct ?? 0,
             avgPercentile: u?.avgPercentile ?? null,
+            titles: history.get(id)?.titles ?? 0,
+            topCuts: history.get(id)?.topCuts ?? 0,
             type1: types[id]?.type1 ?? null,
             type2: types[id]?.type2 ?? null,
         };

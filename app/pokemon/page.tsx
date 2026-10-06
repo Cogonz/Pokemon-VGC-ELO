@@ -2,6 +2,7 @@ import { getPokemonUsage } from '@/lib/stats';
 import { getPokemonElo } from '@/lib/ratings-store';
 import { getAvailableFormats } from '@/lib/formats';
 import { getSpeciesTypeMap } from '@/lib/species-types';
+import { getPokemonHistory } from '@/lib/pokemon-detail';
 import { MIN_POKEMON_ELO_MATCHES, buildPokemonRows } from '@/lib/leaderboards';
 import { UsageChart } from '@/components/UsageChart';
 import { PokemonTable } from '@/components/PokemonTable';
@@ -13,12 +14,13 @@ export default async function PokemonPage({ searchParams }: { searchParams: Prom
     const { current } = await getAvailableFormats();
     const format = formatParam ?? current;
 
-    const [usage, pokemonElo, types] = await Promise.all([
+    const [usage, pokemonElo, types, history] = await Promise.all([
         getPokemonUsage(format),
         getPokemonElo(format),
         getSpeciesTypeMap(),
+        getPokemonHistory(format),
     ]);
-    const rows = buildPokemonRows(pokemonElo, usage, types);
+    const rows = buildPokemonRows(pokemonElo, usage, types, history);
     const leaderboard = rows.filter((p) => p.matches >= MIN_POKEMON_ELO_MATCHES);
 
     return (
@@ -45,9 +47,10 @@ export default async function PokemonPage({ searchParams }: { searchParams: Prom
                         <PokemonTable
                             key={`lb-${format}`}
                             rows={leaderboard}
-                            sortOptions={['elo', 'usage', 'record']}
+                            format={format}
+                            sortOptions={['elo', 'titles', 'usage', 'record']}
                             defaultSort="elo"
-                            columns={['elo', 'record', 'usage']}
+                            columns={['elo', 'titles', 'record', 'usage']}
                         />
                     </section>
 
@@ -61,9 +64,10 @@ export default async function PokemonPage({ searchParams }: { searchParams: Prom
                         <PokemonTable
                             key={`all-${format}`}
                             rows={rows}
-                            sortOptions={['usage', 'elo', 'record', 'finish']}
+                            format={format}
+                            sortOptions={['usage', 'elo', 'titles', 'record', 'finish']}
                             defaultSort="usage"
-                            columns={['usage', 'finish', 'elo', 'record']}
+                            columns={['usage', 'finish', 'elo', 'titles', 'record']}
                         />
                     </section>
                 </>
