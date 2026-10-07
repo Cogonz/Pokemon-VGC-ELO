@@ -44,15 +44,23 @@ need `db/migrations/002_result_bonus.sql` (additive) before deploying.
 
 ## Attribute impact (items, abilities, natures, moves)
 
-Each Pokemon's detail page shows how much a held item, ability, nature or move changes results, in Elo points
-versus that Pokemon's usual choice ([`lib/attribute-impact.ts`](lib/attribute-impact.ts), stored in
+Each Pokemon's detail page shows how teams using a held item, ability, nature or move did compared with teams
+using that Pokemon's *other* options, in Elo points ([`lib/attribute-impact.ts`](lib/attribute-impact.ts), stored in
 `attribute_impact`). It is one joint regularized logistic regression per regulation with features for the Pokemon,
 each Pokemon+attribute pair, and the player, so every attribute is controlled for the others and for who was playing.
-Free-text values are merged case- and whitespace-insensitively ("intimidate" = "Intimidate"), shown with their most
-common spelling ([`lib/canonical.ts`](lib/canonical.ts)). Each Pokemon's impacts are centered on the team-weighted average for that attribute; attributes on 90%+ of a
-Pokemon's teams have no comparison group and are not shown, and anything on fewer than 50 teams is greyed out.
-It is an estimate: with few events per player, skill can still leak into the numbers, so read large swings on small
-samples skeptically. Existing databases need `db/migrations/004_attribute_impact.sql` (it replaces `item_impact`).
+
+- **Relative, not absolute:** the baseline is the team-weighted average of the *other* options (the option itself is
+  left out, so a dominant option isn't compared against itself and forced to ~0). This says how a choice compares
+  with the alternatives; how good it is on its own can't be identified from this data. Near zero on a popular option
+  means it performs like the rest.
+- **Noise guard:** a dominant option has few alternatives to compare with, so a badge is greyed out unless both the
+  option and its alternatives have 50+ teams (`alt_teams` stores the comparison group size). Options on 90%+ of a
+  Pokemon's teams have no comparison group and are not shown.
+- Free-text values are merged case- and whitespace-insensitively ("intimidate" = "Intimidate"), shown with their most
+  common spelling ([`lib/canonical.ts`](lib/canonical.ts)).
+- It is an estimate: with few events per player, skill can still leak into the numbers, so read large swings on small
+  samples skeptically. Existing databases need `db/migrations/004_attribute_impact.sql` and
+  `005_attribute_alt_teams.sql`.
 
 ## Tech stack
 

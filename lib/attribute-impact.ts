@@ -16,10 +16,15 @@ import { Canonicalizer, normKey } from './canonical';
 // four of six were brought; as elsewhere, the whole registered team is credited.
 //
 // A pair's coefficient alone is confounded with its species' coefficient (a Pokemon always has one
-// item, and always four moves), so the reported impact is the pair's coefficient minus the team-weighted
-// average coefficient across that species' values of the same attribute: "this one vs the typical one".
-// Attributes a Pokemon almost always has (>= 90% of its teams) have no comparison group and are not
-// reported.
+// item, and always four moves), so the reported impact is a COMPARISON: the pair's coefficient minus
+// the team-weighted average coefficient of that Pokemon's OTHER values of the same attribute
+// ("this one vs the alternatives"). Leaving the value itself out of the baseline matters for popular
+// values: against a baseline made mostly of themselves they would all read as ~0 ("average"). The
+// flip side is that a dominant value has few alternatives to compare with, so the estimate gets
+// noisier; `alt_teams` (teams using the alternatives) is stored so the UI can flag that.
+// Attributes a Pokemon almost always has (>= 90% of its teams) are not reported.
+// This is a relative measure: it says how a choice compares with the others, not how good it is
+// in absolute terms, which this data cannot identify.
 
 export type AttributeKind = 'item' | 'ability' | 'nature' | 'move';
 
@@ -123,13 +128,14 @@ export function fitModel(
     };
 }
 
-// impact (Elo points) per pair = coefficient - team-weighted mean coefficient of its species' pairs.
+// impact (Elo points) per pair = coefficient - team-weighted mean coefficient of the OTHER values
+// of that Pokemon+attribute. altTeams = teams using those other values.
 export function attributeImpacts(
     pairCoef: Float64Array,
     pairs: { species: string; kind: AttributeKind; teams: number }[]
-): number[] {
-    const sum = new Map<string, number>();
-    const tot = new Map<string, number>();
+): { impact: number; altTeams: number }[] {
+    const sum = new Map<string, number>(); // sum of coef * teams
+    const tot = new Map<string, number>(); // sum of teams
     pairs.forEach((p, i) => {
         const g = `${p.species}\u0000${p.kind}`;
         sum.set(g, (sum.get(g) ?? 0) + pairCoef[i] * p.teams);
@@ -137,7 +143,10 @@ export function attributeImpacts(
     });
     return pairs.map((p, i) => {
         const g = `${p.species}\u0000${p.kind}`;
-        return Math.round((pairCoef[i] - sum.get(g)! / tot.get(g)!) * ELO_SCALE);
+        const altTeams = tot.get(g)! - p.teams;
+        if (altTeams <= 0) return { impact: 0, altTeams: 0 };
+        const altMean = (sum.get(g)! - pairCoef[i] * p.teams) / altTeams;
+        return { impact: Math.round((pairCoef[i] - altMean) * ELO_SCALE), altTeams };
     });
 }
 
@@ -235,6 +244,6 @@ export async function computeAttributeImpacts(format: string): Promise<Attribute
     console.log(`[attribute-impact] ${format}: ${examples.length} matches, ${pairInfo.length} species+attribute pairs`);
 
     return pairInfo
-        .map((p, i) => ({ species_id: p.species, kind: p.kind, value: p.value, teams: p.teams, impact: impacts[i] }))
+        .map((p, i) => ({ species_id: p.species, kind: p.kind, value: p.value, teams: p.teams, alt_teams: impacts[i].altTeams, impact: impacts[i].impact }))
         .filter((r) => r.teams >= MIN_TEAMS_STORED && r.teams < (speciesTeams.get(r.species_id) ?? 0) * UBIQUITOUS_SHARE);
 }

@@ -165,13 +165,14 @@ model saved_teams {
   @@index([user_id], map: "saved_teams_user_idx")
 }
 
-// Impact (Elo points, vs the Pokemon's usual choice) of an item/ability/nature/move; see lib/attribute-impact.ts.
+// Impact (Elo points, vs the Pokemon's alternatives) of an item/ability/nature/move; see lib/attribute-impact.ts.
 model attribute_impact {
   format     String
   species_id String
   kind       String
   value      String
   teams      Int
+  alt_teams  Int @default(0) // teams using this Pokemon's other values of the same attribute
   impact     Int
 
   @@id([format, species_id, kind, value])

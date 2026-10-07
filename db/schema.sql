@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS attribute_impact (
     kind       TEXT NOT NULL, -- item | ability | nature | move
     value      TEXT NOT NULL,
     teams      INTEGER NOT NULL,
+    alt_teams  INTEGER NOT NULL DEFAULT 0, -- teams using this Pokemon's other values of the same attribute
     impact     INTEGER NOT NULL,
     PRIMARY KEY (format, species_id, kind, value)
 );

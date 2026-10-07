@@ -120,21 +120,21 @@ export default async function PokemonDetailPage({
 
             <p className="mt-8 text-xs text-gray-400">
                 Percentages are the share of the {detail.teams.toLocaleString()} teams running {name} that use each
-                option, so move lists add up to roughly 400%, not 100%. Impact badges come from one model that fits items, abilities, natures and moves together and adjusts for player skill, so each is controlled for the others.
+                option, so move lists add up to roughly 400%, not 100%. Impact badges are relative: each shows how teams using that option did compared with teams using this Pokemon's other options, from one model that fits items, abilities, natures and moves together and adjusts for player skill. They say how a choice compares with the alternatives, not how good it is on its own, so a badge near zero on a popular option means it performs like the rest, not that it is bad.
             </p>
             <div className="mt-3 grid gap-4 md:grid-cols-2">
                 <BarList
                     title="Moves"
                     entries={detail.moves}
-                    hint="Badge = Elo impact vs this Pokemon's average move. Not shown for near-universal moves. Grey = too few teams."
+                    hint="Badge = Elo difference vs this Pokemon's other moves. Not shown for near-universal moves. Grey = too few teams."
                 />
                 <BarList
                     title="Items"
                     entries={detail.items}
-                    hint="Badge = Elo impact vs this Pokemon's usual items. Grey = too few teams to trust."
+                    hint="Badge = Elo difference vs this Pokemon's other items. Grey = too few teams to compare."
                 />
-                <BarList title="Abilities" entries={detail.abilities} hint="Badge = Elo impact vs this Pokemon's usual ability." />
-                <BarList title="Natures" entries={detail.natures} hint="Badge = Elo impact vs this Pokemon's usual nature." />
+                <BarList title="Abilities" entries={detail.abilities} hint="Badge = Elo difference vs this Pokemon's other abilities." />
+                <BarList title="Natures" entries={detail.natures} hint="Badge = Elo difference vs this Pokemon's other natures." />
                 {hasTera && <BarList title="Tera types" entries={detail.teras} />}
                 <BarList title="Common teammates" entries={detail.teammates} hint="Share of teams that also run them" />
             </div>

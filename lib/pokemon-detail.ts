@@ -30,7 +30,8 @@ export interface UsageEntry {
     label: string;
     teams: number;
     pct: number; // of teams carrying this Pokemon
-    impact?: number | null; // Elo points vs this Pokemon's usual items (items only; lib/item-impact.ts)
+    impact?: number | null; // Elo points vs this Pokemon's alternatives (lib/attribute-impact.ts)
+    altTeams?: number; // teams using the alternatives (the comparison group)
 }
 
 export interface TournamentResult {
@@ -109,8 +110,11 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
         prisma.attribute_impact.findMany({ where: { format, species_id: speciesId } }),
     ]);
     const impactOf = (kind: string) => {
-        const m = new Map(impacts.filter((r) => r.kind === kind).map((r) => [normKey(r.value), r.impact]));
-        return (e: UsageEntry): UsageEntry => ({ ...e, impact: m.get(normKey(e.label)) ?? null });
+        const m = new Map(impacts.filter((r) => r.kind === kind).map((r) => [normKey(r.value), r]));
+        return (e: UsageEntry): UsageEntry => {
+            const r = m.get(normKey(e.label));
+            return { ...e, impact: r?.impact ?? null, altTeams: r?.alt_teams };
+        };
     };
 
     return {

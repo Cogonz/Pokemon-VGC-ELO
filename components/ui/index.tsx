@@ -177,15 +177,20 @@ export function SearchInput(props: React.InputHTMLAttributes<HTMLInputElement>) 
 }
 
 // A ranked list of labels with a share-of-teams bar, used for moves/items/abilities/teammates.
-const LOW_SAMPLE_TEAMS = 50; // impact estimates under this many teams are mostly noise
+const LOW_SAMPLE_TEAMS = 50; // impact estimates need this many teams on BOTH sides of the comparison
 
-function ImpactBadge({ impact, teams }: { impact: number; teams: number }) {
-    const low = teams < LOW_SAMPLE_TEAMS;
+function ImpactBadge({ impact, teams, altTeams }: { impact: number; teams: number; altTeams: number }) {
+    const low = teams < LOW_SAMPLE_TEAMS || altTeams < LOW_SAMPLE_TEAMS;
     const tone = low ? 'bg-gray-100 text-gray-400' : impact >= 10 ? 'bg-emerald-100 text-emerald-700' : impact <= -10 ? 'bg-rose-100 text-rose-700' : 'bg-gray-100 text-gray-500';
+    const sign = impact > 0 ? `+${impact}` : impact < 0 ? `-${Math.abs(impact)}` : '0';
     return (
         <span
             className={`ml-2 rounded px-1.5 py-px text-[11px] font-semibold tabular-nums ${tone}`}
-            title={low ? `Only ${teams} teams: too few to trust this estimate` : `${impact >= 0 ? '+' : ''}${impact} Elo vs this Pokemon's usual items`}
+            title={
+                low
+                    ? `Only ${teams} teams with it and ${altTeams} with the alternatives: too few to trust this comparison`
+                    : `Teams using this did about ${sign} Elo ${impact >= 0 ? 'better' : 'worse'} than teams using this Pokemon's alternatives (${teams} vs ${altTeams} teams), after adjusting for player skill`
+            }
         >
             {impact > 0 ? `+${impact}` : impact < 0 ? `−${Math.abs(impact)}` : '±0'}
         </span>
@@ -198,7 +203,7 @@ export function BarList({
     hint,
 }: {
     title: string;
-    entries: { label: string; teams: number; pct: number; impact?: number | null }[];
+    entries: { label: string; teams: number; pct: number; impact?: number | null; altTeams?: number }[];
     hint?: string;
 }) {
     if (entries.length === 0) return null;
@@ -212,7 +217,7 @@ export function BarList({
                         <div className="flex items-baseline justify-between gap-3 text-sm">
                             <span className="truncate text-gray-800">
                                 {e.label}
-                                {e.impact != null && <ImpactBadge impact={e.impact} teams={e.teams} />}
+                                {e.impact != null && <ImpactBadge impact={e.impact} teams={e.teams} altTeams={e.altTeams ?? 0} />}
                             </span>
                             <span className="shrink-0 tabular-nums text-gray-500">
                                 {e.pct.toFixed(e.pct >= 10 ? 0 : 1)}%{' '}
