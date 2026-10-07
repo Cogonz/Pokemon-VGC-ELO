@@ -153,12 +153,14 @@ CREATE TABLE IF NOT EXISTS saved_teams (
 );
 CREATE INDEX IF NOT EXISTS saved_teams_user_idx ON saved_teams(user_id);
 
--- Item impact per Pokemon (lib/item-impact.ts), rewritten by ingestion alongside the ratings.
-CREATE TABLE IF NOT EXISTS item_impact (
+-- Impact of items, abilities, natures and moves per Pokemon (lib/attribute-impact.ts), rewritten by
+-- ingestion alongside the ratings.
+CREATE TABLE IF NOT EXISTS attribute_impact (
     format     TEXT NOT NULL,
     species_id TEXT NOT NULL,
-    item       TEXT NOT NULL,
+    kind       TEXT NOT NULL, -- item | ability | nature | move
+    value      TEXT NOT NULL,
     teams      INTEGER NOT NULL,
     impact     INTEGER NOT NULL,
-    PRIMARY KEY (format, species_id, item)
+    PRIMARY KEY (format, species_id, kind, value)
 );

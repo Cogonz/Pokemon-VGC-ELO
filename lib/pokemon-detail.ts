@@ -105,18 +105,19 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
             WHERE tp.species_id = ${speciesId} AND t.format = ${format} AND s.placement BETWEEN 1 AND 4
             ORDER BY s.placement ASC, t.players DESC NULLS LAST, t.date DESC NULLS LAST
             LIMIT 15`,
-        prisma.item_impact.findMany({ where: { format, species_id: speciesId } }),
+        prisma.attribute_impact.findMany({ where: { format, species_id: speciesId } }),
     ]);
-    const impactByItem = new Map(impacts.map((r) => [r.item, r.impact]));
+    const impactOf = (kind: string) => {
+        const m = new Map(impacts.filter((r) => r.kind === kind).map((r) => [r.value, r.impact]));
+        return (e: UsageEntry): UsageEntry => ({ ...e, impact: m.get(e.label) ?? null });
+    };
 
     return {
         teams,
-        moves: toEntries(moves, teams),
-        items: toEntries(items, teams)
-            .slice(0, 12)
-            .map((e) => ({ ...e, impact: impactByItem.get(e.label) ?? null })),
-        abilities: toEntries(abilities, teams).slice(0, 6),
-        natures: toEntries(natures, teams).slice(0, 6),
+        moves: toEntries(moves, teams).map(impactOf('move')),
+        items: toEntries(items, teams).slice(0, 12).map(impactOf('item')),
+        abilities: toEntries(abilities, teams).slice(0, 6).map(impactOf('ability')),
+        natures: toEntries(natures, teams).slice(0, 6).map(impactOf('nature')),
         teras: toEntries(teras, teams).slice(0, 8),
         teammates: toEntries(teammates, teams),
         results: results.map((r) => ({ ...r, date: r.date ? r.date.toISOString().slice(0, 10) : null })),

@@ -3,7 +3,7 @@ import { getAvailableFormats } from './formats';
 import { computePlayerElo, type PlayerElo } from './elo';
 import { computePokemonElo, type PokemonElo } from './pokemon-elo';
 import { computePlayerBonuses, computePokemonBonuses } from './results';
-import { computeItemImpacts, type ItemImpactRow } from './item-impact';
+import { computeAttributeImpacts, type AttributeImpactRow } from './attribute-impact';
 
 // The joint Pokemon regression and the player Elo replay both scan every
 // match for a regulation, which is too much work (and too many rows pulled
@@ -27,10 +27,10 @@ export async function refreshRatings(): Promise<void> {
     const pokemonRows: { format: string; species_id: string; name: string; rating: number; wins: number; losses: number; ties: number; matches: number; result_bonus: number }[] = [];
     const playerRows: { format: string; player: string; name: string; rating: number; wins: number; losses: number; ties: number; result_bonus: number }[] = [];
 
-    const itemRows: (ItemImpactRow & { format: string })[] = [];
+    const attributeRows: (AttributeImpactRow & { format: string })[] = [];
 
     for (const { format } of options) {
-        for (const r of await computeItemImpacts(format)) itemRows.push({ format, ...r });
+        for (const r of await computeAttributeImpacts(format)) attributeRows.push({ format, ...r });
         const [pokemonBonus, playerBonus] = await Promise.all([computePokemonBonuses(format), computePlayerBonuses(format)]);
         for (const p of await computePokemonElo(format)) {
             pokemonRows.push({
@@ -53,13 +53,13 @@ export async function refreshRatings(): Promise<void> {
     await prisma.$transaction([
         prisma.pokemon_elo.deleteMany(),
         prisma.player_elo.deleteMany(),
-        prisma.item_impact.deleteMany(),
+        prisma.attribute_impact.deleteMany(),
         ...chunk(pokemonRows).map((data) => prisma.pokemon_elo.createMany({ data })),
         ...chunk(playerRows).map((data) => prisma.player_elo.createMany({ data })),
-        ...chunk(itemRows).map((data) => prisma.item_impact.createMany({ data })),
+        ...chunk(attributeRows).map((data) => prisma.attribute_impact.createMany({ data })),
     ]);
 
-    console.log(`[ratings] stored ${pokemonRows.length} pokemon ratings and ${playerRows.length} player ratings and ${itemRows.length} item impacts across ${options.length} format(s)`);
+    console.log(`[ratings] stored ${pokemonRows.length} pokemon ratings and ${playerRows.length} player ratings and ${attributeRows.length} attribute impacts across ${options.length} format(s)`);
 }
 
 // Stored ratings split into match Elo and the tournament-results bonus. `rating` is the combined

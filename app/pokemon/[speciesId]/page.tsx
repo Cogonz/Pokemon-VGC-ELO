@@ -120,17 +120,21 @@ export default async function PokemonDetailPage({
 
             <p className="mt-8 text-xs text-gray-400">
                 Percentages are the share of the {detail.teams.toLocaleString()} teams running {name} that use each
-                option, so move lists add up to roughly 400%, not 100%.
+                option, so move lists add up to roughly 400%, not 100%. Impact badges come from one model that fits items, abilities, natures and moves together and adjusts for player skill, so each is controlled for the others.
             </p>
             <div className="mt-3 grid gap-4 md:grid-cols-2">
-                <BarList title="Moves" entries={detail.moves} />
+                <BarList
+                    title="Moves"
+                    entries={detail.moves}
+                    hint="Badge = Elo impact vs this Pokemon's average move. Not shown for near-universal moves. Grey = too few teams."
+                />
                 <BarList
                     title="Items"
                     entries={detail.items}
-                    hint="Badge = Elo impact vs this Pokemon's usual items, adjusted for player skill. Grey = too few teams to trust."
+                    hint="Badge = Elo impact vs this Pokemon's usual items. Grey = too few teams to trust."
                 />
-                <BarList title="Abilities" entries={detail.abilities} />
-                <BarList title="Natures" entries={detail.natures} />
+                <BarList title="Abilities" entries={detail.abilities} hint="Badge = Elo impact vs this Pokemon's usual ability." />
+                <BarList title="Natures" entries={detail.natures} hint="Badge = Elo impact vs this Pokemon's usual nature." />
                 {hasTera && <BarList title="Tera types" entries={detail.teras} />}
                 <BarList title="Common teammates" entries={detail.teammates} hint="Share of teams that also run them" />
             </div>
