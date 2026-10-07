@@ -48,7 +48,8 @@ Each Pokemon's detail page shows how much a held item, ability, nature or move c
 versus that Pokemon's usual choice ([`lib/attribute-impact.ts`](lib/attribute-impact.ts), stored in
 `attribute_impact`). It is one joint regularized logistic regression per regulation with features for the Pokemon,
 each Pokemon+attribute pair, and the player, so every attribute is controlled for the others and for who was playing.
-Each Pokemon's impacts are centered on the team-weighted average for that attribute; attributes on ~97%+ of a
+Free-text values are merged case- and whitespace-insensitively ("intimidate" = "Intimidate"), shown with their most
+common spelling ([`lib/canonical.ts`](lib/canonical.ts)). Each Pokemon's impacts are centered on the team-weighted average for that attribute; attributes on 90%+ of a
 Pokemon's teams have no comparison group and are not shown, and anything on fewer than 50 teams is greyed out.
 It is an estimate: with few events per player, skill can still leak into the numbers, so read large swings on small
 samples skeptically. Existing databases need `db/migrations/004_attribute_impact.sql` (it replaces `item_impact`).

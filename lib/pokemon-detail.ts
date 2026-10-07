@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { normKey } from './canonical';
 
 // Placement 1 only counts as a win when exactly one player holds it (see lib/titles.ts).
 const SOLE_WINNER = `(SELECT count(*) FROM standings o WHERE o.tournament_id = s.tournament_id AND o.placement = 1) = 1`;
@@ -71,10 +72,10 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
 
     const column = (col: 'item' | 'ability' | 'nature' | 'tera') =>
         prisma.$queryRawUnsafe<Row[]>(
-            `SELECT tp.${col} AS label, count(*) AS n
+            `SELECT mode() WITHIN GROUP (ORDER BY btrim(tp.${col})) AS label, count(*) AS n
              FROM team_pokemon tp JOIN standings s ON s.id = tp.standing_id JOIN tournaments t ON t.id = s.tournament_id
              WHERE tp.species_id = $1 AND t.format = $2
-             GROUP BY tp.${col} ORDER BY n DESC`,
+             GROUP BY lower(btrim(tp.${col})) ORDER BY n DESC`,
             speciesId,
             format
         );
@@ -85,11 +86,11 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
         column('nature'),
         column('tera'),
         prisma.$queryRaw<Row[]>`
-            SELECT m AS label, count(*) AS n
+            SELECT mode() WITHIN GROUP (ORDER BY btrim(m)) AS label, count(*) AS n
             FROM team_pokemon tp JOIN standings s ON s.id = tp.standing_id JOIN tournaments t ON t.id = s.tournament_id,
                  unnest(tp.moves) AS m
             WHERE tp.species_id = ${speciesId} AND t.format = ${format}
-            GROUP BY m ORDER BY n DESC LIMIT 16`,
+            GROUP BY lower(btrim(m)) ORDER BY n DESC LIMIT 16`,
         prisma.$queryRaw<Row[]>`
             SELECT mate.name AS label, count(DISTINCT mate.standing_id) AS n
             FROM team_pokemon tp
@@ -108,8 +109,8 @@ export async function getPokemonDetail(speciesId: string, format: string): Promi
         prisma.attribute_impact.findMany({ where: { format, species_id: speciesId } }),
     ]);
     const impactOf = (kind: string) => {
-        const m = new Map(impacts.filter((r) => r.kind === kind).map((r) => [r.value, r.impact]));
-        return (e: UsageEntry): UsageEntry => ({ ...e, impact: m.get(e.label) ?? null });
+        const m = new Map(impacts.filter((r) => r.kind === kind).map((r) => [normKey(r.value), r.impact]));
+        return (e: UsageEntry): UsageEntry => ({ ...e, impact: m.get(normKey(e.label)) ?? null });
     };
 
     return {

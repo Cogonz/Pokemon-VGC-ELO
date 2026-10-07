@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { Canonicalizer, normKey } from './canonical';
 
 // Attribute impact: how much a Pokemon's held item, ability, nature or move changes the result,
 // in Elo points, relative to that Pokemon's usual choices for the same attribute.
@@ -17,7 +18,7 @@ import { prisma } from './prisma';
 // A pair's coefficient alone is confounded with its species' coefficient (a Pokemon always has one
 // item, and always four moves), so the reported impact is the pair's coefficient minus the team-weighted
 // average coefficient across that species' values of the same attribute: "this one vs the typical one".
-// Attributes a Pokemon almost always has (>= ~97% of its teams) have no comparison group and are not
+// Attributes a Pokemon almost always has (>= 90% of its teams) have no comparison group and are not
 // reported.
 
 export type AttributeKind = 'item' | 'ability' | 'nature' | 'move';
@@ -148,7 +149,9 @@ export interface AttributeImpactRow {
     impact: number;
 }
 
-const UBIQUITOUS_SHARE = 0.97;
+// Attributes on at least this share of a Pokemon's teams have almost no comparison group, so their
+// impact is mostly noise and isn't reported.
+const UBIQUITOUS_SHARE = 0.9;
 
 export async function computeAttributeImpacts(format: string): Promise<AttributeImpactRow[]> {
     const [matches, team] = await Promise.all([
@@ -174,6 +177,20 @@ export async function computeAttributeImpacts(format: string): Promise<Attribute
         return i;
     };
 
+    // Free-text values: merge case/whitespace variants ("intimidate" / "Intimidate") before fitting.
+    const canon: Record<AttributeKind, Canonicalizer> = {
+        item: new Canonicalizer(),
+        ability: new Canonicalizer(),
+        nature: new Canonicalizer(),
+        move: new Canonicalizer(),
+    };
+    for (const r of team) {
+        if (r.item?.trim()) canon.item.add(r.item);
+        if (r.ability?.trim()) canon.ability.add(r.ability);
+        if (r.nature?.trim()) canon.nature.add(r.nature);
+        for (const mv of r.moves ?? []) if (mv.trim()) canon.move.add(mv);
+    }
+
     // roster per (tournament, player): species set and species+attribute set
     const rosters = new Map<string, { species: Set<number>; pairs: Set<number> }>();
     for (const r of team) {
@@ -183,13 +200,13 @@ export async function computeAttributeImpacts(format: string): Promise<Attribute
         ro.species.add(index(speciesIdx, r.species_id));
         speciesTeams.set(r.species_id, (speciesTeams.get(r.species_id) ?? 0) + 1);
 
-        const values: [AttributeKind, string][] = [['item', r.item?.trim() || '(none)']];
-        if (r.ability?.trim()) values.push(['ability', r.ability.trim()]);
-        if (r.nature?.trim()) values.push(['nature', r.nature.trim()]);
-        for (const mv of new Set(r.moves ?? [])) if (mv.trim()) values.push(['move', mv.trim()]);
+        const values: [AttributeKind, string][] = [['item', r.item?.trim() ? canon.item.display(r.item) : '(none)']];
+        if (r.ability?.trim()) values.push(['ability', canon.ability.display(r.ability)]);
+        if (r.nature?.trim()) values.push(['nature', canon.nature.display(r.nature)]);
+        for (const mv of new Set((r.moves ?? []).filter((m) => m.trim()).map((m) => canon.move.display(m)))) values.push(['move', mv]);
 
         for (const [kind, value] of values) {
-            const pk = `${kind}\u0000${r.species_id}\u0000${value}`;
+            const pk = `${kind}\u0000${r.species_id}\u0000${normKey(value)}`;
             const before = pairIdx.size;
             const pi = index(pairIdx, pk);
             if (pairIdx.size > before) pairInfo.push({ species: r.species_id, kind, value, teams: 0 });
